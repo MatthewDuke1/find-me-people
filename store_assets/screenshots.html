@@ -14,14 +14,14 @@
   /* Shared styles for all assets */
   .screen { position: relative; overflow: hidden; }
   .gradient-bg {
-    background: radial-gradient(ellipse at 30% 20%, rgba(139,92,246,0.2) 0%, transparent 50%),
+    background: radial-gradient(ellipse at 30% 20%, rgba(16,185,129,0.2) 0%, transparent 50%),
                 radial-gradient(ellipse at 70% 80%, rgba(109,40,217,0.1) 0%, transparent 50%),
                 #0a0a0a;
   }
   .title { font-weight: 900; letter-spacing: -0.5px; }
   .subtitle { color: #a1a1aa; }
-  .purple { color: #a78bfa; }
-  .accent-line { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, #6d28d9, #8b5cf6, #a78bfa); }
+  .purple { color: #34d399; }
+  .accent-line { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, #065f46, #10b981, #34d399); }
 
   /* Card styling */
   .card { background: #111113; border: 1px solid #27272a; border-radius: 10px; }
@@ -39,8 +39,8 @@
 
   /* Magnifying glass (CSS-only) */
   .mag-glass { position: absolute; }
-  .mag-ring { border: 4px solid #c4b5fd; border-radius: 50%; position: absolute; }
-  .mag-handle { background: #c4b5fd; position: absolute; transform: rotate(45deg); border-radius: 3px; }
+  .mag-ring { border: 4px solid #a7f3d0; border-radius: 50%; position: absolute; }
+  .mag-handle { background: #a7f3d0; position: absolute; transform: rotate(45deg); border-radius: 3px; }
 </style>
 </head>
 <body>
@@ -96,10 +96,10 @@
       </div>
       <!-- Extension icon with badge -->
       <div style="position:relative;margin-left:auto;">
-        <div style="width:28px;height:28px;background:linear-gradient(135deg,#6d28d9,#8b5cf6);border-radius:50%;display:flex;align-items:center;justify-content:center;">
+        <div style="width:28px;height:28px;background:linear-gradient(135deg,#065f46,#10b981);border-radius:50%;display:flex;align-items:center;justify-content:center;">
           <span style="font-size:14px;">&#128100;</span>
         </div>
-        <div style="position:absolute;top:-4px;right:-4px;background:#a78bfa;color:#0a0a0a;font-size:9px;font-weight:800;padding:1px 4px;border-radius:8px;">4</div>
+        <div style="position:absolute;top:-4px;right:-4px;background:#34d399;color:#0a0a0a;font-size:9px;font-weight:800;padding:1px 4px;border-radius:8px;">4</div>
       </div>
     </div>
     <!-- Page content + popup -->
@@ -113,7 +113,7 @@
       </div>
       <!-- Popup -->
       <div style="width:300px;background:#0a0a0a;border-left:1px solid #27272a;padding:0;">
-        <div style="background:#6d28d9;padding:12px 14px;display:flex;align-items:center;gap:8px;">
+        <div style="background:#065f46;padding:12px 14px;display:flex;align-items:center;gap:8px;">
           <span style="font-size:16px;">&#128100;</span>
           <span style="font-weight:700;font-size:13px;">Find Me People</span>
         </div>
@@ -176,12 +176,12 @@
   <div class="title" style="font-size:40px;margin-bottom:8px;">One click to copy</div>
   <div class="subtitle" style="font-size:18px;margin-bottom:40px;">Click any result. It's on your clipboard.</div>
   <div style="position:relative;width:520px;">
-    <div class="card" style="padding:16px 20px;border-left:3px solid #8b5cf6;border-color:#8b5cf6;display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
-      <div><div style="font-size:16px;font-weight:700;">support@bigstore.com</div><div style="font-size:12px;color:#a78bfa;margin-top:2px;">Copied!</div></div>
-      <span class="badge" style="background:rgba(139,92,246,0.2);color:#a78bfa;">&#10003; Copied</span>
+    <div class="card" style="padding:16px 20px;border-left:3px solid #10b981;border-color:#10b981;display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
+      <div><div style="font-size:16px;font-weight:700;">support@bigstore.com</div><div style="font-size:12px;color:#34d399;margin-top:2px;">Copied!</div></div>
+      <span class="badge" style="background:rgba(16,185,129,0.2);color:#34d399;">&#10003; Copied</span>
     </div>
     <!-- Toast -->
-    <div style="position:absolute;top:-50px;left:50%;transform:translateX(-50%);background:#a78bfa;color:#0a0a0a;padding:8px 24px;border-radius:10px;font-size:14px;font-weight:700;white-space:nowrap;">
+    <div style="position:absolute;top:-50px;left:50%;transform:translateX(-50%);background:#34d399;color:#0a0a0a;padding:8px 24px;border-radius:10px;font-size:14px;font-weight:700;white-space:nowrap;">
       Copied to clipboard
     </div>
   </div>
@@ -198,16 +198,16 @@
   <div class="subtitle" style="font-size:18px;margin-bottom:40px;">Even when there's no email or phone on the page</div>
   <div style="display:flex;flex-direction:column;gap:12px;width:520px;">
     <div style="font-size:11px;color:#52525b;text-transform:uppercase;letter-spacing:1px;font-weight:600;">Support Pages Detected</div>
-    <a class="card" style="padding:14px 20px;display:block;text-decoration:none;border-left:3px solid #a78bfa;">
-      <div style="font-size:15px;font-weight:600;color:#a78bfa;">Contact Us</div>
+    <a class="card" style="padding:14px 20px;display:block;text-decoration:none;border-left:3px solid #34d399;">
+      <div style="font-size:15px;font-weight:600;color:#34d399;">Contact Us</div>
       <div style="font-size:12px;color:#52525b;margin-top:2px;">/contact-us</div>
     </a>
-    <a class="card" style="padding:14px 20px;display:block;text-decoration:none;border-left:3px solid #a78bfa;">
-      <div style="font-size:15px;font-weight:600;color:#a78bfa;">Help Center</div>
+    <a class="card" style="padding:14px 20px;display:block;text-decoration:none;border-left:3px solid #34d399;">
+      <div style="font-size:15px;font-weight:600;color:#34d399;">Help Center</div>
       <div style="font-size:12px;color:#52525b;margin-top:2px;">/help</div>
     </a>
-    <a class="card" style="padding:14px 20px;display:block;text-decoration:none;border-left:3px solid #a78bfa;">
-      <div style="font-size:15px;font-weight:600;color:#a78bfa;">Get Support</div>
+    <a class="card" style="padding:14px 20px;display:block;text-decoration:none;border-left:3px solid #34d399;">
+      <div style="font-size:15px;font-weight:600;color:#34d399;">Get Support</div>
       <div style="font-size:12px;color:#52525b;margin-top:2px;">/support/get-in-touch</div>
     </a>
   </div>
@@ -222,10 +222,10 @@
 <!-- ============================================================ -->
 <h2>Small Promo Tile (440x280)</h2>
 <div class="asset">
-<div class="screen" style="width:440px;height:280px;background:linear-gradient(135deg,#6d28d9 0%,#0a0a0a 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
+<div class="screen" style="width:440px;height:280px;background:linear-gradient(135deg,#065f46 0%,#0a0a0a 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
   <div style="font-size:48px;margin-bottom:12px;">&#128100;&#128270;</div>
   <div class="title" style="font-size:24px;">Find Me People</div>
-  <div style="font-size:13px;color:#c4b5fd;margin-top:6px;">Customer service contacts, instantly.</div>
+  <div style="font-size:13px;color:#a7f3d0;margin-top:6px;">Customer service contacts, instantly.</div>
   <div style="display:flex;gap:8px;margin-top:16px;">
     <div class="dot" style="background:#4ade80;"></div>
     <span style="font-size:11px;color:#a1a1aa;">Auto-scans every website</span>
@@ -237,11 +237,11 @@
 <!-- ============================================================ -->
 <h2>Marquee Promo Tile (1400x560)</h2>
 <div class="asset">
-<div class="screen" style="width:1400px;height:560px;background:linear-gradient(135deg,#6d28d9 0%,#18181b 60%,#0a0a0a 100%);display:flex;align-items:center;padding:0 80px;">
+<div class="screen" style="width:1400px;height:560px;background:linear-gradient(135deg,#065f46 0%,#18181b 60%,#0a0a0a 100%);display:flex;align-items:center;padding:0 80px;">
   <div style="flex:1;">
     <div style="font-size:56px;margin-bottom:8px;">&#128100;&#128270;</div>
     <div class="title" style="font-size:48px;line-height:1.15;">Find Me<br>People</div>
-    <div style="font-size:20px;color:#c4b5fd;margin-top:16px;max-width:400px;line-height:1.5;">
+    <div style="font-size:20px;color:#a7f3d0;margin-top:16px;max-width:400px;line-height:1.5;">
       Customer service emails and phone numbers,<br>found instantly on any website.
     </div>
     <div style="display:flex;gap:12px;margin-top:24px;">
@@ -250,7 +250,7 @@
         <span style="font-size:13px;color:#a1a1aa;">Auto-scan</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
-        <div class="dot" style="background:#a78bfa;"></div>
+        <div class="dot" style="background:#34d399;"></div>
         <span style="font-size:13px;color:#a1a1aa;">Ranked results</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
