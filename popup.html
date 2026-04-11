@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', -apple-system, sans-serif; width: 380px; max-height: 520px; background: #0a0a0a; color: #fafafa; }
+
+    .header { padding: 16px 16px 12px; border-bottom: 1px solid #1e1e1e; }
+    .header h1 { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .header h1 span { font-size: 20px; }
+    .header .site { font-size: 11px; color: #71717a; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .status { padding: 10px 16px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+    .status .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot-green { background: #4ade80; }
+    .dot-yellow { background: #fbbf24; }
+    .dot-red { background: #f87171; }
+
+    .section { padding: 8px 16px; }
+    .section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #52525b; margin-bottom: 8px; }
+
+    .contact-item {
+      background: #111113; border: 1px solid #1e1e1e; border-radius: 8px;
+      padding: 10px 12px; margin-bottom: 6px; cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .contact-item:hover { border-color: #a78bfa; }
+    .contact-item .value { font-size: 14px; font-weight: 600; color: #fafafa; word-break: break-all; }
+    .contact-item .meta { font-size: 11px; color: #52525b; margin-top: 3px; display: flex; justify-content: space-between; align-items: center; }
+    .contact-item .score { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 8px; }
+    .score-high { background: rgba(74,222,128,0.15); color: #4ade80; }
+    .score-mid { background: rgba(251,191,36,0.15); color: #fbbf24; }
+    .score-low { background: rgba(161,161,170,0.15); color: #a1a1aa; }
+
+    .copied { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: #a78bfa; color: #0a0a0a; padding: 6px 16px; border-radius: 8px; font-size: 12px; font-weight: 600; display: none; z-index: 10; }
+    .copied.show { display: block; }
+
+    .link-item {
+      display: block; padding: 8px 12px; background: #111113; border: 1px solid #1e1e1e;
+      border-radius: 8px; margin-bottom: 6px; text-decoration: none;
+      font-size: 13px; color: #a78bfa; transition: border-color 0.2s;
+    }
+    .link-item:hover { border-color: #a78bfa; }
+    .link-item .link-label { font-size: 11px; color: #52525b; }
+
+    .empty { padding: 24px 16px; text-align: center; color: #52525b; font-size: 13px; line-height: 1.5; }
+    .empty strong { color: #71717a; }
+
+    .scanning { padding: 40px 16px; text-align: center; color: #52525b; font-size: 13px; }
+    .scanning .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid #27272a; border-top-color: #a78bfa; border-radius: 50%; animation: spin 0.6s linear infinite; margin-bottom: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .scroll { max-height: 420px; overflow-y: auto; padding-bottom: 8px; }
+    .scroll::-webkit-scrollbar { width: 4px; }
+    .scroll::-webkit-scrollbar-thumb { background: #27272a; border-radius: 4px; }
+
+    .rescan-btn {
+      display: block; width: calc(100% - 32px); margin: 8px 16px 12px; padding: 8px;
+      background: #18181b; border: 1px solid #27272a; border-radius: 8px;
+      color: #a78bfa; font-size: 12px; font-weight: 600; cursor: pointer;
+      font-family: inherit; transition: border-color 0.2s; text-align: center;
+    }
+    .rescan-btn:hover { border-color: #a78bfa; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1><span>&#128100;</span> Find Me People</h1>
+    <div class="site" id="site-url">Scanning...</div>
+  </div>
+
+  <div id="content">
+    <div class="scanning">
+      <div class="spinner"></div>
+      <p>Scanning page for contacts...</p>
+    </div>
+  </div>
+
+  <div class="copied" id="copied">Copied to clipboard</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
