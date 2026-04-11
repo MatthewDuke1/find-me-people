@@ -12,6 +12,21 @@ Customer service is disappearing.
 - **The "self-service" trap.** FAQ pages and knowledge bases are positioned as the first (and only) support channel. The actual email or phone number is either absent from the page or requires 4+ clicks to find.
 - **Time is the real cost.** The average person spends 10-15 minutes trying to find a company's real support contact. Multiply that by every service you use -- internet, insurance, banking, subscriptions -- and you're losing hours every year to an intentionally frustrating system.
 
+### The math: ~6 hours/year wasted finding contact info
+
+The average American manages 8-12 service relationships -- phone, internet, insurance, bank, credit cards, streaming, utilities, and more. [58% of Americans contact customer service in any given month](https://www.statista.com/statistics/815526/customers-who-have-contacted-customer-service-in-the-past-month-us/) (Statista), and [86% have to contact support multiple times for the same issue](https://www.helpscout.com/75-customer-service-facts-quotes-statistics/) (HelpScout). Conservatively, that's **~30 customer service interactions per year**.
+
+At 10-15 minutes spent hunting for the right number or email each time:
+
+| | Without Find Me People | With Find Me People |
+|---|---|---|
+| Time per search | 10-15 min | ~5 seconds |
+| Interactions/year | ~30 | ~30 |
+| **Annual time spent** | **5-7.5 hours** | **~2.5 minutes** |
+| **Time saved** | -- | **~6 hours/year** |
+
+That's nearly a full workday you get back every year -- just from not having to hunt for a phone number or email address.
+
 The result: reaching a real human for help has become a skill, not a right.
 
 **Find Me People** fixes this by scanning every website you visit and surfacing customer service contact information instantly -- before you even have to look for it.
