@@ -10,22 +10,34 @@ Customer service is disappearing.
 - **Contact info is deliberately hidden.** Many companies bury their phone numbers and emails behind chatbot walls, help articles, and multi-step "contact us" funnels designed to deflect you before you ever reach a person.
 - **Chatbots are the new gatekeepers.** You're now expected to explain your problem to a bot, navigate a decision tree, and prove the bot can't help you -- all before getting the option to speak with someone.
 - **The "self-service" trap.** FAQ pages and knowledge bases are positioned as the first (and only) support channel. The actual email or phone number is either absent from the page or requires 4+ clicks to find.
-- **Time is the real cost.** The average person spends 10-15 minutes trying to find a company's real support contact. Multiply that by every service you use -- internet, insurance, banking, subscriptions -- and you're losing hours every year to an intentionally frustrating system.
+- **Time is the real cost.** The average person spends 10-15 minutes trying to find a company's real support contact. But that's just the search. Add hold times (up 60% over 20 years), chatbot loops, follow-up calls, and re-explaining your issue -- and a single support interaction now consumes 30-45 minutes of your life.
 
-### The math: ~6 hours/year wasted finding contact info
+### The math: 45+ hours/year lost to the "annoyance economy"
 
-The average American manages 8-12 service relationships -- phone, internet, insurance, bank, credit cards, streaming, utilities, and more. [58% of Americans contact customer service in any given month](https://www.statista.com/statistics/815526/customers-who-have-contacted-customer-service-in-the-past-month-us/) (Statista), and [86% have to contact support multiple times for the same issue](https://www.helpscout.com/75-customer-service-facts-quotes-statistics/) (HelpScout). Conservatively, that's **~30 customer service interactions per year**.
+The numbers are staggering -- and getting worse every year:
 
-At 10-15 minutes spent hunting for the right number or email each time:
+- The ["annoyance economy" costs Americans $165 billion per year](https://groundworkcollaborative.org/work/taking-on-the-annoyance-economy/) in wasted time and money (Groundwork Collaborative, 2026)
+- [74% of customers reported a problem in the last year](https://fortune.com/2026/02/19/americans-paying-over-165-billion-annually-vibes-based-taxes-annoyance-economy/) -- **double the rate since 1976** (Fortune)
+- [Time spent on hold has increased 60%](https://fortune.com/2026/02/19/americans-paying-over-165-billion-annually-vibes-based-taxes-annoyance-economy/) over the last 20 years
+- [86% of customers have to contact support multiple times](https://www.helpscout.com/75-customer-service-facts-quotes-statistics/) for the same issue (HelpScout)
+- [More than 1 in 3 Americans](https://groundworkcollaborative.org/work/taking-on-the-annoyance-economy/) deal with service headaches **20+ times per year**
+- Americans receive [130 million scam calls per day](https://groundworkcollaborative.org/work/taking-on-the-annoyance-economy/), making it even harder to identify real support lines
+- Making cancellation difficult [boosts company revenue by up to 200%](https://groundworkcollaborative.org/work/taking-on-the-annoyance-economy/) -- companies are financially incentivized to hide from you
+
+The average American now manages 10-15+ service relationships (phone, internet, insurance, bank, credit cards, streaming, utilities, healthcare, subscriptions). With 74% experiencing problems and 86% requiring repeat contacts, the typical person faces **60-80 customer service interactions per year** -- each one beginning with the same frustrating search for how to actually reach someone.
 
 | | Without Find Me People | With Find Me People |
 |---|---|---|
-| Time per search | 10-15 min | ~5 seconds |
-| Interactions/year | ~30 | ~30 |
-| **Annual time spent** | **5-7.5 hours** | **~2.5 minutes** |
-| **Time saved** | -- | **~6 hours/year** |
+| Time finding contact info | 10-15 min | ~5 seconds |
+| Average hold + chatbot time | 20-30 min | 20-30 min |
+| Interactions/year | 60-80 | 60-80 |
+| **Time lost searching/year** | **15-20 hours** | **~7 minutes** |
+| **Total time lost to support/year** | **45-60+ hours** | **25-40 hours** |
+| **Time saved** | -- | **~20+ hours/year** |
 
-That's nearly a full workday you get back every year -- just from not having to hunt for a phone number or email address.
+That's **more than two full workdays** you reclaim every year on search time alone. And because Find Me People surfaces hidden support pages and direct contact links that bypass chatbot funnels entirely, the total time saved grows even further -- cutting your annual support burden from 45-60 hours down significantly.
+
+> The annoyance economy thrives because companies bet you'll give up before you find the right number. **Find Me People breaks that bet.**
 
 The result: reaching a real human for help has become a skill, not a right.
 
