@@ -42,6 +42,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const emails = data.emails || [];
     const phones = data.phones || [];
     const links = data.links || [];
+    const hours = data.hours || [];
     const total = emails.length + phones.length;
 
     let html = "";
@@ -54,6 +55,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     } else {
       html += `<div class="status"><span class="dot dot-red"></span> No contacts found on this page</div>`;
     }
+
+    // Hours banner (right after status)
+    html += renderHoursBanner(hours);
 
     html += '<div class="scroll">';
 
@@ -149,4 +153,119 @@ function copyToClipboard(text) {
   const el = document.getElementById("copied");
   el.classList.add("show");
   setTimeout(() => el.classList.remove("show"), 1500);
+}
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function renderHoursBanner(hours) {
+  if (!hours || hours.length === 0) {
+    return `
+      <div class="hours-banner unknown">
+        <div class="pulse"></div>
+        <div class="status-text">
+          <div class="status-label">Hours not posted</div>
+          <div class="status-detail">No business hours detected on this page</div>
+        </div>
+      </div>`;
+  }
+
+  // Determine if currently open
+  const now = new Date();
+  const todayIdx = now.getDay();
+  const todayName = DAY_NAMES[todayIdx].toLowerCase();
+  const todayShort = DAY_SHORT[todayIdx].toLowerCase();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  let openNow = false;
+  let todayHours = null;
+
+  hours.forEach((h) => {
+    const display = (h.display || "").toLowerCase();
+    const days = (h.days || []).map((d) => String(d).toLowerCase());
+    const matchesToday =
+      display.includes(todayName) ||
+      display.includes(todayShort) ||
+      days.some((d) => d.includes(todayShort) || d.includes(todayName));
+
+    if (matchesToday && !todayHours) {
+      todayHours = h.display;
+      // Try to parse open/close to determine if currently open
+      if (h.opens && h.closes) {
+        const openMin = parseTimeToMinutes(h.opens);
+        const closeMin = parseTimeToMinutes(h.closes);
+        if (openMin !== null && closeMin !== null) {
+          if (currentMinutes >= openMin && currentMinutes < closeMin) openNow = true;
+        }
+      }
+    }
+  });
+
+  // Fallback: if no today match, use first entry
+  if (!todayHours) todayHours = hours[0].display;
+
+  const bannerClass = openNow ? "open" : todayHours ? "closed" : "unknown";
+  const statusLabel = openNow ? "Open Now" : "Closed Now";
+  const detail = todayHours ? `Today: ${todayHours}` : "Hours not detected for today";
+
+  let html = `
+    <div class="hours-banner ${bannerClass}">
+      <div class="pulse"></div>
+      <div class="status-text">
+        <div class="status-label">${statusLabel}</div>
+        <div class="status-detail">${escapeHtml(detail)}</div>
+      </div>
+    </div>`;
+
+  // Full hours list (deduped)
+  if (hours.length > 1) {
+    const seen = new Set();
+    const rows = [];
+    hours.forEach((h) => {
+      if (!seen.has(h.display)) {
+        seen.add(h.display);
+        const isToday =
+          (h.display || "").toLowerCase().includes(todayName) ||
+          (h.display || "").toLowerCase().includes(todayShort);
+        rows.push({ display: h.display, isToday });
+      }
+    });
+
+    html += '<div class="hours-list">';
+    rows.slice(0, 7).forEach((r) => {
+      const parts = r.display.split(/:\s+/);
+      const day = parts[0] || r.display;
+      const time = parts.slice(1).join(": ") || "";
+      html += `<div class="hours-row${r.isToday ? " today" : ""}">
+        <span class="day">${escapeHtml(day)}</span>
+        <span>${escapeHtml(time)}</span>
+      </div>`;
+    });
+    html += "</div>";
+  }
+
+  return html;
+}
+
+function parseTimeToMinutes(t) {
+  if (!t) return null;
+  const s = String(t).trim().toLowerCase();
+  // "9am", "9:30pm", "17:00"
+  let m = s.match(/^(\d{1,2}):?(\d{2})?\s*(am|pm)?$/);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const min = m[2] ? parseInt(m[2], 10) : 0;
+  const ampm = m[3];
+  if (ampm === "pm" && h < 12) h += 12;
+  if (ampm === "am" && h === 12) h = 0;
+  return h * 60 + min;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }

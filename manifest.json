@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Find Me People",
-  "version": "1.0.0",
-  "description": "Instantly find customer service emails and phone numbers on any website. Because companies are making it harder -- we make it easier",
+  "version": "1.1.0",
+  "description": "Instantly find customer service emails, phone numbers, and business hours on any website. Because companies are making it harder -- we make it easier",
   "permissions": ["activeTab", "scripting"],
   "host_permissions": ["<all_urls>"],
   "action": {

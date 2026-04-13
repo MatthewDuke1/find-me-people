@@ -41,9 +41,35 @@
     /\/customer-service/i, /\/get-in-touch/i, /\/reach-us/i,
   ];
 
+  // Day name regex parts
+  const DAY_NAMES = "(?:mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday)";
+  const DAY_FULL = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+  const DAY_SHORT = ["sun","mon","tue","wed","thu","fri","sat"];
+
+  // Hours patterns - match "Mon-Fri 9am-5pm", "Monday: 9:00 - 17:00", "9am - 5pm", etc.
+  const TIME = "(?:1[0-2]|[1-9])(?::[0-5]\\d)?\\s*(?:am|pm|AM|PM)|(?:[01]?\\d|2[0-3]):[0-5]\\d";
+  const HOURS_LINE_REGEX = new RegExp(
+    "(" + DAY_NAMES + "(?:\\s*[-–to]+\\s*" + DAY_NAMES + ")?)" +
+    "[:\\s]+(" + TIME + ")\\s*[-–to]+\\s*(" + TIME + ")",
+    "gi"
+  );
+  // Just a time range like "9am - 5pm" (not anchored to day)
+  const TIME_RANGE_REGEX = new RegExp(
+    "(" + TIME + ")\\s*[-–]+\\s*(" + TIME + ")",
+    "gi"
+  );
+
+  // Keywords that indicate hours context
+  const HOURS_KEYWORDS = [
+    "hours of operation", "business hours", "opening hours", "open hours",
+    "store hours", "office hours", "hours", "open", "we're open",
+    "operating hours", "working hours",
+  ];
+
   function scanPage() {
-    const results = { emails: [], phones: [], links: [], context: [] };
+    const results = { emails: [], phones: [], links: [], context: [], hours: [] };
     const seen = new Set();
+    const hoursSeen = new Set();
 
     // 1. Scan mailto: and tel: links (highest confidence)
     document.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
@@ -97,6 +123,9 @@
       }
     });
 
+    // 5. Scan for hours of operation
+    extractHours(results, hoursSeen);
+
     // Sort by relevance score
     results.emails.sort((a, b) => b.score - a.score);
     results.phones.sort((a, b) => b.score - a.score);
@@ -111,6 +140,184 @@
     });
 
     return results;
+  }
+
+  function extractHours(results, hoursSeen) {
+    // 1. Try schema.org JSON-LD structured data first (highest confidence)
+    document.querySelectorAll('script[type="application/ld+json"]').forEach((script) => {
+      try {
+        const data = JSON.parse(script.textContent);
+        const items = Array.isArray(data) ? data : [data];
+        items.forEach((item) => {
+          collectSchemaHours(item, results, hoursSeen);
+        });
+      } catch (e) {}
+    });
+
+    // 2. Try microdata (itemprop="openingHours")
+    document.querySelectorAll('[itemprop="openingHours"]').forEach((el) => {
+      const content = el.getAttribute("content") || el.textContent.trim();
+      if (content && !hoursSeen.has(content)) {
+        hoursSeen.add(content);
+        const parsed = parseSchemaOpeningHours(content);
+        if (parsed) {
+          results.hours.push({
+            display: parsed.display,
+            days: parsed.days,
+            score: 95,
+            source: "microdata",
+          });
+        }
+      }
+    });
+
+    // 3. Scan body text for hours patterns
+    const candidates = new Set();
+
+    // Look in elements whose class/id mentions hours
+    document.querySelectorAll(
+      '[class*="hour"], [id*="hour"], [class*="schedule"], [id*="schedule"], ' +
+      '[class*="open"], [id*="open"], footer, [class*="footer"]'
+    ).forEach((el) => {
+      const text = (el.textContent || "").substring(0, 500);
+      if (text) candidates.add(text);
+    });
+
+    // Also scan elements containing hours keywords
+    const allText = document.body ? document.body.innerText : "";
+    HOURS_KEYWORDS.forEach((kw) => {
+      const idx = allText.toLowerCase().indexOf(kw);
+      if (idx !== -1) {
+        const snippet = allText.substring(idx, idx + 300);
+        candidates.add(snippet);
+      }
+    });
+
+    candidates.forEach((text) => {
+      const matches = parseHoursFromText(text);
+      matches.forEach((m) => {
+        const key = m.display.toLowerCase();
+        if (!hoursSeen.has(key)) {
+          hoursSeen.add(key);
+          results.hours.push(m);
+        }
+      });
+    });
+
+    // Sort by score
+    results.hours.sort((a, b) => b.score - a.score);
+    // Cap at 7 entries (one per day)
+    results.hours = results.hours.slice(0, 7);
+  }
+
+  function collectSchemaHours(item, results, hoursSeen) {
+    if (!item || typeof item !== "object") return;
+
+    if (item.openingHours) {
+      const hours = Array.isArray(item.openingHours) ? item.openingHours : [item.openingHours];
+      hours.forEach((h) => {
+        if (typeof h === "string" && !hoursSeen.has(h)) {
+          hoursSeen.add(h);
+          const parsed = parseSchemaOpeningHours(h);
+          if (parsed) {
+            results.hours.push({
+              display: parsed.display,
+              days: parsed.days,
+              score: 100,
+              source: "json-ld",
+            });
+          }
+        }
+      });
+    }
+
+    if (item.openingHoursSpecification) {
+      const specs = Array.isArray(item.openingHoursSpecification)
+        ? item.openingHoursSpecification
+        : [item.openingHoursSpecification];
+      specs.forEach((spec) => {
+        const days = Array.isArray(spec.dayOfWeek) ? spec.dayOfWeek : [spec.dayOfWeek];
+        const dayNames = days.filter(Boolean).map(simplifyDayName);
+        const opens = formatTime(spec.opens);
+        const closes = formatTime(spec.closes);
+        if (dayNames.length && opens && closes) {
+          const dayLabel = dayNames.length > 1 ? dayNames[0] + "-" + dayNames[dayNames.length - 1] : dayNames[0];
+          const display = dayLabel + ": " + opens + " - " + closes;
+          if (!hoursSeen.has(display)) {
+            hoursSeen.add(display);
+            results.hours.push({
+              display,
+              days: dayNames,
+              opens,
+              closes,
+              score: 100,
+              source: "json-ld",
+            });
+          }
+        }
+      });
+    }
+
+    // Recurse into nested schema objects
+    Object.values(item).forEach((v) => {
+      if (v && typeof v === "object") collectSchemaHours(v, results, hoursSeen);
+    });
+  }
+
+  function simplifyDayName(d) {
+    if (!d) return "";
+    const s = String(d).toLowerCase().replace(/.*\//, "");
+    return s.charAt(0).toUpperCase() + s.slice(1, 3);
+  }
+
+  function formatTime(t) {
+    if (!t) return "";
+    // Convert "09:00" to "9am", etc.
+    const m = String(t).match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return String(t);
+    let h = parseInt(m[1], 10);
+    const min = m[2];
+    const ampm = h >= 12 ? "pm" : "am";
+    h = h % 12 || 12;
+    return min === "00" ? h + ampm : h + ":" + min + ampm;
+  }
+
+  function parseSchemaOpeningHours(str) {
+    // Schema format: "Mo,Tu,We,Th,Fr 09:00-17:00" or "Mo-Fr 09:00-17:00"
+    const m = str.match(/([A-Za-z,\-]+)\s+(\d{1,2}:\d{2})-(\d{1,2}:\d{2})/);
+    if (!m) return null;
+    const dayPart = m[1];
+    const opens = formatTime(m[2]);
+    const closes = formatTime(m[3]);
+    return {
+      display: dayPart + ": " + opens + " - " + closes,
+      days: dayPart.split(/[,-]/),
+      opens,
+      closes,
+    };
+  }
+
+  function parseHoursFromText(text) {
+    const found = [];
+    HOURS_LINE_REGEX.lastIndex = 0;
+    let match;
+    let count = 0;
+    while ((match = HOURS_LINE_REGEX.exec(text)) !== null && count < 10) {
+      count++;
+      const day = match[1].trim();
+      const open = match[2].trim();
+      const close = match[3].trim();
+      const display = day.charAt(0).toUpperCase() + day.slice(1).toLowerCase() + ": " + open + " - " + close;
+      found.push({
+        display,
+        opens: open,
+        closes: close,
+        days: [day],
+        score: 80,
+        source: "text",
+      });
+    }
+    return found;
   }
 
   function extractFromText(text, parentEl, results, seen) {
