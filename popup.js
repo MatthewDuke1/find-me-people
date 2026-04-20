@@ -68,8 +68,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         const scoreClass = e.score >= 70 ? "score-high" : e.score >= 40 ? "score-mid" : "score-low";
         const scoreLabel = e.score >= 70 ? "Likely support" : e.score >= 40 ? "Possible" : "Low match";
         html += `
-          <div class="contact-item" onclick="copyToClipboard('${e.value}')">
-            <div class="value">${e.value}</div>
+          <div class="contact-item" data-copy="${escapeHtml(e.value)}">
+            <div class="value">${escapeHtml(e.value)}</div>
             <div class="meta">
               <span>Click to copy</span>
               <span class="score ${scoreClass}">${scoreLabel}</span>
@@ -86,8 +86,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         const scoreClass = p.score >= 70 ? "score-high" : p.score >= 40 ? "score-mid" : "score-low";
         const scoreLabel = p.score >= 70 ? "Likely support" : p.score >= 40 ? "Possible" : "Low match";
         html += `
-          <div class="contact-item" onclick="copyToClipboard('${p.value}')">
-            <div class="value">${p.value}</div>
+          <div class="contact-item" data-copy="${escapeHtml(p.value)}">
+            <div class="value">${escapeHtml(p.value)}</div>
             <div class="meta">
               <span>Click to copy</span>
               <span class="score ${scoreClass}">${scoreLabel}</span>
@@ -101,9 +101,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (links.length > 0) {
       html += '<div class="section"><div class="section-title">Support Pages</div>';
       links.slice(0, 5).forEach((l) => {
-        html += `<a class="link-item" href="${l.url}" target="_blank">
-          ${l.text || "Contact Page"}
-          <div class="link-label">${new URL(l.url).pathname}</div>
+        let pathname = "";
+        try { pathname = new URL(l.url).pathname; } catch (_) {}
+        html += `<a class="link-item" href="${escapeHtml(l.url)}" target="_blank" rel="noopener noreferrer">
+          ${escapeHtml(l.text || "Contact Page")}
+          <div class="link-label">${escapeHtml(pathname)}</div>
         </a>`;
       });
       html += "</div>";
@@ -123,6 +125,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     html += '<button class="rescan-btn" id="rescan-btn">Rescan this page</button>';
 
     contentEl.innerHTML = html;
+
+    // Wire up click-to-copy (inline onclick is blocked by MV3 CSP)
+    contentEl.querySelectorAll("[data-copy]").forEach((el) => {
+      el.addEventListener("click", () => copyToClipboard(el.dataset.copy));
+    });
 
     document.getElementById("rescan-btn").addEventListener("click", () => {
       contentEl.innerHTML = '<div class="scanning"><div class="spinner"></div><p>Rescanning...</p></div>';
