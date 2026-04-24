@@ -1,8 +1,8 @@
-# Find Me People (Firefox)
+# Find Me People
 
-A Firefox extension that instantly finds customer service emails and phone numbers on any website. Because companies are making it harder to reach a human -- we make it easier.
+A browser extension that instantly finds customer service emails and phone numbers on any website. Because companies are making it harder to reach a human -- we make it easier.
 
-> This is the Firefox build of Find Me People. The Chrome build lives on the `master` branch.
+> **Cross-browser:** a single Manifest V3 codebase that installs in both Chrome and Firefox (Firefox 121+).
 
 ## The Problem
 
@@ -83,34 +83,39 @@ The extension runs automatically on every page you visit. It:
 
 ## Install
 
-### From source (temporary install via `about:debugging`)
+### Chrome / Chromium (developer mode)
 
-1. Clone this repository and switch to the `firefox` branch:
+1. Clone this repository:
    ```bash
    git clone https://github.com/MatthewDuke1/find-me-people.git
-   cd find-me-people
-   git checkout firefox
    ```
+2. Open Chrome and go to `chrome://extensions/`
+3. Enable **Developer mode** (top right)
+4. Click **Load unpacked** and select the `find-me-people` folder
 
+### Firefox (temporary add-on via `about:debugging`)
+
+1. Clone the repository as above
 2. Open Firefox and go to `about:debugging#/runtime/this-firefox`
-
 3. Click **Load Temporary Add-on...**
-
 4. Select the `manifest.json` file inside the `find-me-people` folder
 
-5. The extension icon appears in your toolbar. Visit any website and click it.
+> Temporary add-ons are removed when Firefox restarts. For a permanent install, the extension must be packaged and signed via [addons.mozilla.org](https://addons.mozilla.org). Requires Firefox **121 or newer** (MV3 service worker support).
 
-> Temporary add-ons are removed when Firefox restarts. For a permanent install, the extension must be packaged and signed via [addons.mozilla.org](https://addons.mozilla.org).
+### Building store-ready zips
 
-### Packaging for AMO submission
-
-From the project root:
+Run the build script from the project root:
 
 ```bash
-zip -r find-me-people-firefox.zip . -x "*.git*" "store_assets/*" "*.zip"
+./build.sh
 ```
 
-Then upload the zip to [addons.mozilla.org/developers](https://addons.mozilla.org/developers/).
+This produces:
+
+- `dist/find-me-people-chrome.zip`  -> upload to [Chrome Web Store developer console](https://chrome.google.com/webstore/devconsole)
+- `dist/find-me-people-firefox.zip` -> upload to [addons.mozilla.org/developers](https://addons.mozilla.org/developers/)
+
+Both archives share the same unified manifest -- the split naming just keeps the per-store upload workflow explicit.
 
 ## Usage
 
@@ -143,9 +148,9 @@ Then upload the zip to [addons.mozilla.org/developers](https://addons.mozilla.or
 
 | Component | Technology |
 |-----------|-----------|
-| Platform | Firefox Extension (Manifest V3, Firefox 115+) |
+| Platform | Browser Extension (Manifest V3, Chrome + Firefox 121+) |
 | Content Script | Vanilla JavaScript (scans every page) |
-| Background | Event page script (manages badge counts) |
+| Background | Service Worker (manages badge counts) |
 | Popup | HTML + CSS + JS (no frameworks) |
 | Permissions | `activeTab`, `scripting` only |
 
@@ -160,15 +165,16 @@ Then upload the zip to [addons.mozilla.org/developers](https://addons.mozilla.or
 
 ```
 find-me-people/
-├── manifest.json       # Firefox extension manifest (V3, gecko settings)
+├── manifest.json       # Unified MV3 manifest (Chrome + Firefox 121+)
 ├── content.js          # Injected into every page -- scans for contacts
-├── background.js       # Event page script -- manages badge count
+├── background.js       # Service worker -- manages badge count
 ├── popup.html          # Extension popup UI
 ├── popup.js            # Popup logic -- displays results, handles copy
+├── build.sh            # Emits dist/{chrome,firefox}.zip for store uploads
 ├── icons/
 │   ├── icon16.png      # Toolbar icon
 │   ├── icon48.png      # Extensions page
-│   └── icon128.png     # AMO listing
+│   └── icon128.png     # Chrome Web Store / AMO listing
 └── README.md
 ```
 
