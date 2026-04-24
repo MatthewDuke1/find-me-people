@@ -8,7 +8,7 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "find-me-people@matthewduke.dev",
-      "strict_min_version": "115.0"
+      "strict_min_version": "121.0"
     }
   },
   "action": {
@@ -27,7 +27,7 @@
     }
   ],
   "background": {
-    "scripts": ["background.js"]
+    "service_worker": "background.js"
   },
   "icons": {
     "16": "icons/icon16.png",
