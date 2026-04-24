@@ -1,6 +1,8 @@
-# Find Me People
+# Find Me People (Firefox)
 
-A Chrome extension that instantly finds customer service emails and phone numbers on any website. Because companies are making it harder to reach a human -- we make it easier.
+A Firefox extension that instantly finds customer service emails and phone numbers on any website. Because companies are making it harder to reach a human -- we make it easier.
+
+> This is the Firefox build of Find Me People. The Chrome build lives on the `master` branch.
 
 ## The Problem
 
@@ -81,20 +83,34 @@ The extension runs automatically on every page you visit. It:
 
 ## Install
 
-### From source (developer mode)
+### From source (temporary install via `about:debugging`)
 
-1. Clone this repository:
+1. Clone this repository and switch to the `firefox` branch:
    ```bash
    git clone https://github.com/MatthewDuke1/find-me-people.git
+   cd find-me-people
+   git checkout firefox
    ```
 
-2. Open Chrome and go to `chrome://extensions/`
+2. Open Firefox and go to `about:debugging#/runtime/this-firefox`
 
-3. Enable **Developer mode** (toggle in the top right)
+3. Click **Load Temporary Add-on...**
 
-4. Click **Load unpacked** and select the `find-me-people` folder
+4. Select the `manifest.json` file inside the `find-me-people` folder
 
 5. The extension icon appears in your toolbar. Visit any website and click it.
+
+> Temporary add-ons are removed when Firefox restarts. For a permanent install, the extension must be packaged and signed via [addons.mozilla.org](https://addons.mozilla.org).
+
+### Packaging for AMO submission
+
+From the project root:
+
+```bash
+zip -r find-me-people-firefox.zip . -x "*.git*" "store_assets/*" "*.zip"
+```
+
+Then upload the zip to [addons.mozilla.org/developers](https://addons.mozilla.org/developers/).
 
 ## Usage
 
@@ -127,9 +143,9 @@ The extension runs automatically on every page you visit. It:
 
 | Component | Technology |
 |-----------|-----------|
-| Platform | Chrome Extension (Manifest V3) |
+| Platform | Firefox Extension (Manifest V3, Firefox 115+) |
 | Content Script | Vanilla JavaScript (scans every page) |
-| Background | Service Worker (manages badge counts) |
+| Background | Event page script (manages badge counts) |
 | Popup | HTML + CSS + JS (no frameworks) |
 | Permissions | `activeTab`, `scripting` only |
 
@@ -144,15 +160,15 @@ The extension runs automatically on every page you visit. It:
 
 ```
 find-me-people/
-├── manifest.json       # Chrome extension manifest (V3)
+├── manifest.json       # Firefox extension manifest (V3, gecko settings)
 ├── content.js          # Injected into every page -- scans for contacts
-├── background.js       # Service worker -- manages badge count
+├── background.js       # Event page script -- manages badge count
 ├── popup.html          # Extension popup UI
 ├── popup.js            # Popup logic -- displays results, handles copy
 ├── icons/
 │   ├── icon16.png      # Toolbar icon
 │   ├── icon48.png      # Extensions page
-│   └── icon128.png     # Chrome Web Store
+│   └── icon128.png     # AMO listing
 └── README.md
 ```
 

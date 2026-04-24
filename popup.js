@@ -6,7 +6,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Get current tab
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab || !tab.url || tab.url.startsWith("chrome://")) {
+  const RESTRICTED_PROTOCOLS = ["chrome://", "about:", "moz-extension://", "chrome-extension://", "resource://", "view-source:"];
+  if (!tab || !tab.url || RESTRICTED_PROTOCOLS.some((p) => tab.url.startsWith(p))) {
     siteEl.textContent = "Not available on this page";
     contentEl.innerHTML = '<div class="empty"><strong>Can\'t scan this page</strong><br>Navigate to a website to find contact info.</div>';
     return;
