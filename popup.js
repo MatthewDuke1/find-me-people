@@ -1,5 +1,166 @@
 // Find Me People - Popup Script
 
+// Click-to-call deep links: hand the phone number off to the user's chosen app
+const VOIP_SERVICES = [
+  { id: "tel",      name: "Phone",        buildUrl: (e164) => `tel:${e164}` },
+  { id: "whatsapp", name: "WhatsApp",     buildUrl: (e164) => `https://wa.me/${e164.replace(/^\+/, "")}` },
+  { id: "gvoice",   name: "Google Voice", buildUrl: (e164) => `https://voice.google.com/u/0/calls?a=nc,${encodeURIComponent(e164)}` },
+  { id: "facetime", name: "FaceTime",     buildUrl: (e164) => `facetime-audio:${e164}` },
+  { id: "teams",    name: "Teams",        buildUrl: (e164) => `https://teams.microsoft.com/l/call/0/0?users=4:${encodeURIComponent(e164)}` },
+];
+
+// Boilerplate composer templates -- subject + body get URL-encoded into the chosen mail client
+const EMAIL_TEMPLATES = [
+  {
+    id: "refund",
+    label: "Refund",
+    subject: "Refund Request",
+    body: [
+      "Hello,",
+      "",
+      "I'd like to request a refund for [order number / purchase date].",
+      "",
+      "Reason: [briefly describe]",
+      "",
+      "Please let me know what additional information you need to process this. I appreciate your help.",
+      "",
+      "Thank you,",
+      "[Your name]",
+    ].join("\n"),
+  },
+  {
+    id: "complaint",
+    label: "Complaint",
+    subject: "Customer Complaint",
+    body: [
+      "Hello,",
+      "",
+      "I'm writing to share a concern about a recent experience with [product/service].",
+      "",
+      "What happened:",
+      "[describe the issue]",
+      "",
+      "What I'd like to see resolved:",
+      "[desired outcome]",
+      "",
+      "I appreciate your time and look forward to your response.",
+      "",
+      "Best regards,",
+      "[Your name]",
+    ].join("\n"),
+  },
+  {
+    id: "cancel",
+    label: "Cancel",
+    subject: "Cancellation Request",
+    body: [
+      "Hello,",
+      "",
+      "I'd like to cancel my [account / subscription / service].",
+      "",
+      "Account details: [email or account number]",
+      "Effective date: [date or \"as soon as possible\"]",
+      "",
+      "Please confirm the cancellation and let me know if anything further is needed on my end.",
+      "",
+      "Thank you,",
+      "[Your name]",
+    ].join("\n"),
+  },
+  {
+    id: "billing",
+    label: "Billing",
+    subject: "Billing Question",
+    body: [
+      "Hello,",
+      "",
+      "I have a question about a charge on my account:",
+      "",
+      "- Date: [date]",
+      "- Amount: [amount]",
+      "- Description: [what was charged]",
+      "",
+      "[Your question or concern]",
+      "",
+      "Could you please look into this and get back to me?",
+      "",
+      "Thank you,",
+      "[Your name]",
+    ].join("\n"),
+  },
+  {
+    id: "support",
+    label: "Support",
+    subject: "Support Request",
+    body: [
+      "Hello,",
+      "",
+      "I'm having an issue I'd appreciate help with.",
+      "",
+      "What's happening:",
+      "[describe]",
+      "",
+      "What I've already tried:",
+      "[any troubleshooting]",
+      "",
+      "Any guidance would be appreciated.",
+      "",
+      "Thanks,",
+      "[Your name]",
+    ].join("\n"),
+  },
+];
+
+const EMAIL_CLIENTS = [
+  {
+    id: "default",
+    name: "Default",
+    buildUrl: ({ to, subject, body }) =>
+      `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
+  },
+  {
+    id: "gmail",
+    name: "Gmail",
+    buildUrl: ({ to, subject, body }) =>
+      `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
+  },
+  {
+    id: "outlook",
+    name: "Outlook",
+    buildUrl: ({ to, subject, body }) =>
+      `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(to)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
+  },
+];
+
+const CLIENT_STORAGE_KEY = "fmp_email_client";
+
+function getSelectedClient() {
+  try { return localStorage.getItem(CLIENT_STORAGE_KEY) || "default"; }
+  catch (_) { return "default"; }
+}
+
+function setSelectedClient(id) {
+  try { localStorage.setItem(CLIENT_STORAGE_KEY, id); } catch (_) {}
+}
+
+function toE164(phone) {
+  let s = String(phone).replace(/[^\d+]/g, "");
+  if (s.startsWith("+")) return s;
+  if (s.length === 10) return "+1" + s;
+  if (s.length === 11 && s.startsWith("1")) return "+" + s;
+  return "+" + s;
+}
+
+function openUrl(url) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   const contentEl = document.getElementById("content");
   const siteEl = document.getElementById("site-url");
@@ -63,16 +224,35 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Emails
     if (emails.length > 0) {
+      const currentClient = getSelectedClient();
       html += '<div class="section"><div class="section-title">Email</div>';
-      emails.slice(0, 8).forEach((e) => {
+      // One client picker for the whole section -- preference persisted across popup opens
+      html += '<div class="client-picker"><span class="picker-label">Open in</span>';
+      EMAIL_CLIENTS.forEach((c) => {
+        const sel = c.id === currentClient ? " selected" : "";
+        html += `<button class="action-chip${sel}" data-set-client="${c.id}">${escapeHtml(c.name)}</button>`;
+      });
+      html += "</div>";
+      emails.slice(0, 8).forEach((e, idx) => {
         const scoreClass = e.score >= 70 ? "score-high" : e.score >= 40 ? "score-mid" : "score-low";
         const scoreLabel = e.score >= 70 ? "Likely support" : e.score >= 40 ? "Possible" : "Low match";
+        const escVal = escapeHtml(e.value);
+        const id = `email-${idx}`;
+        const tplChips = EMAIL_TEMPLATES.map(
+          (t) => `<button class="action-chip" data-template="${t.id}" data-email="${escVal}">${escapeHtml(t.label)}</button>`
+        ).join("");
         html += `
-          <div class="contact-item" data-copy="${escapeHtml(e.value)}">
-            <div class="value">${escapeHtml(e.value)}</div>
-            <div class="meta">
-              <span>Click to copy</span>
-              <span class="score ${scoreClass}">${scoreLabel}</span>
+          <div class="contact-item">
+            <div class="contact-main" data-copy="${escVal}">
+              <div class="value">${escVal}</div>
+              <div class="meta">
+                <span>Click to copy</span>
+                <span class="score ${scoreClass}">${scoreLabel}</span>
+              </div>
+            </div>
+            <button class="actions-toggle" data-toggle="${id}">Compose <span class="caret">&#9662;</span></button>
+            <div class="actions-panel" data-panel="${id}">
+              <div class="action-chips">${tplChips}</div>
             </div>
           </div>`;
       });
@@ -82,15 +262,27 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Phones
     if (phones.length > 0) {
       html += '<div class="section"><div class="section-title">Phone</div>';
-      phones.slice(0, 6).forEach((p) => {
+      phones.slice(0, 6).forEach((p, idx) => {
         const scoreClass = p.score >= 70 ? "score-high" : p.score >= 40 ? "score-mid" : "score-low";
         const scoreLabel = p.score >= 70 ? "Likely support" : p.score >= 40 ? "Possible" : "Low match";
+        const escVal = escapeHtml(p.value);
+        const escE164 = escapeHtml(toE164(p.value));
+        const id = `phone-${idx}`;
+        const voipChips = VOIP_SERVICES.map(
+          (s) => `<button class="action-chip" data-voip="${s.id}" data-phone="${escE164}">${escapeHtml(s.name)}</button>`
+        ).join("");
         html += `
-          <div class="contact-item" data-copy="${escapeHtml(p.value)}">
-            <div class="value">${escapeHtml(p.value)}</div>
-            <div class="meta">
-              <span>Click to copy</span>
-              <span class="score ${scoreClass}">${scoreLabel}</span>
+          <div class="contact-item">
+            <div class="contact-main" data-copy="${escVal}">
+              <div class="value">${escVal}</div>
+              <div class="meta">
+                <span>Click to copy</span>
+                <span class="score ${scoreClass}">${scoreLabel}</span>
+              </div>
+            </div>
+            <button class="actions-toggle" data-toggle="${id}">Call <span class="caret">&#9662;</span></button>
+            <div class="actions-panel" data-panel="${id}">
+              <div class="action-chips">${voipChips}</div>
             </div>
           </div>`;
       });
@@ -129,6 +321,52 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Wire up click-to-copy (inline onclick is blocked by MV3 CSP)
     contentEl.querySelectorAll("[data-copy]").forEach((el) => {
       el.addEventListener("click", () => copyToClipboard(el.dataset.copy));
+    });
+
+    // Expand/collapse the Compose / Call action panel under each contact
+    contentEl.querySelectorAll("[data-toggle]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.toggle;
+        const panel = contentEl.querySelector(`[data-panel="${id}"]`);
+        if (panel) {
+          panel.classList.toggle("open");
+          btn.classList.toggle("open");
+        }
+      });
+    });
+
+    // Email client preference (Default / Gmail / Outlook) -- persisted in localStorage
+    contentEl.querySelectorAll("[data-set-client]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.setClient;
+        setSelectedClient(id);
+        contentEl.querySelectorAll("[data-set-client]").forEach((b) => {
+          b.classList.toggle("selected", b.dataset.setClient === id);
+        });
+      });
+    });
+
+    // Compose template chip -> open chosen mail client with subject + body pre-filled
+    contentEl.querySelectorAll("[data-template]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const tpl = EMAIL_TEMPLATES.find((t) => t.id === btn.dataset.template);
+        const client = EMAIL_CLIENTS.find((c) => c.id === getSelectedClient()) || EMAIL_CLIENTS[0];
+        const to = btn.dataset.email;
+        if (tpl && to) openUrl(client.buildUrl({ to, subject: tpl.subject, body: tpl.body }));
+      });
+    });
+
+    // VOIP chip -> open the chosen app/site with the phone number passed in
+    contentEl.querySelectorAll("[data-voip]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const svc = VOIP_SERVICES.find((s) => s.id === btn.dataset.voip);
+        const phone = btn.dataset.phone;
+        if (svc && phone) openUrl(svc.buildUrl(phone));
+      });
     });
 
     document.getElementById("rescan-btn").addEventListener("click", () => {
