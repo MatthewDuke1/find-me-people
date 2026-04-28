@@ -145,6 +145,52 @@
     }
     .hours-row.today { color: #fafafa; font-weight: 600; }
     .hours-row .day { text-transform: capitalize; }
+
+    /* Review prompt toast (one-time, after PROMPT_THRESHOLD copies) */
+    .review-toast {
+      margin: 10px 16px;
+      padding: 12px 38px 12px 14px;
+      background: linear-gradient(135deg, rgba(74,222,128,0.10), rgba(167,139,250,0.06));
+      border: 1px solid rgba(74,222,128,0.25);
+      border-radius: 10px;
+      position: relative;
+    }
+    .review-toast-close {
+      position: absolute; top: 6px; right: 8px;
+      background: none; border: none; color: #71717a;
+      font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 6px;
+      font-family: inherit;
+    }
+    .review-toast-close:hover { color: #fafafa; }
+    .review-toast-title {
+      font-size: 13px; font-weight: 700; color: #fafafa;
+      display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+    }
+    .review-toast-title .star { color: #fbbf24; font-size: 14px; }
+    .review-toast-body { font-size: 12px; color: #a1a1aa; margin-bottom: 10px; }
+    .review-toast-actions { display: flex; gap: 8px; }
+    .review-btn-primary, .review-btn-secondary {
+      font-family: inherit; font-size: 11px; font-weight: 700;
+      padding: 6px 12px; border-radius: 6px; cursor: pointer;
+      transition: all 0.15s; border: 1px solid transparent;
+    }
+    .review-btn-primary { background: #4ade80; color: #0a0a0a; border-color: #4ade80; }
+    .review-btn-primary:hover { background: #86efac; border-color: #86efac; }
+    .review-btn-secondary { background: transparent; color: #a1a1aa; border-color: #27272a; }
+    .review-btn-secondary:hover { color: #fafafa; border-color: #4ade80; }
+
+    /* Always-visible rate footer link */
+    .rate-footer {
+      text-align: center; padding: 8px 16px 12px;
+      border-top: 1px solid #1e1e1e;
+    }
+    .rate-footer a {
+      color: #71717a; font-size: 11px; text-decoration: none;
+      display: inline-flex; align-items: center; gap: 4px;
+      transition: color 0.15s;
+    }
+    .rate-footer a:hover { color: #4ade80; }
+    .rate-footer .star { color: #fbbf24; }
   </style>
 </head>
 <body>
@@ -158,6 +204,10 @@
       <div class="spinner"></div>
       <p>Scanning page for contacts...</p>
     </div>
+  </div>
+
+  <div class="rate-footer">
+    <a id="rate-link" href="#" target="_blank" rel="noopener"><span class="star">&#9733;</span> Rate Find Me People</a>
   </div>
 
   <div class="copied" id="copied">Copied to clipboard</div>
