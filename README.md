@@ -4,6 +4,15 @@ A browser extension that instantly finds customer service emails and phone numbe
 
 > **Cross-browser:** a single Manifest V3 codebase that installs in both Chrome and Firefox (Firefox 121+).
 
+## What's New in 1.3.2
+
+- **Firefox support.** Single MV3 codebase now installs in both Chrome and Firefox 121+.
+- **Compose templates for emails.** Each email card has a "Compose" toggle with chips for Refund, Complaint, Cancel, Billing, Support, plus a **Blank** chip for a quick "just open Gmail with this address" path. Templates open in your preferred client (Default mail app, Gmail, or Outlook -- preference persisted across popup opens).
+- **Call-via deep links for phone numbers.** Each phone card has a "Call" toggle that hands the number off to your dialer of choice -- system phone, WhatsApp, Google Voice, FaceTime, or Microsoft Teams. Numbers are auto-normalized to E.164.
+- **Rate prompt.** A discrete `★ Rate Find Me People` link sits in the popup footer at all times, plus a one-time encouragement toast after you've copied 5 contacts. Browser-aware: Firefox users land on AMO, Chrome users on the Web Store.
+- **Compose reliability fix.** HTTPS opens (Gmail web, Outlook web, WhatsApp web, Google Voice, Teams) now route through `chrome.tabs.create` instead of programmatic anchor click, so the popup-blocker no longer silently suppresses the new tab.
+- **Build scripts.** `build.sh` / `build.ps1` produce store-ready zips for Chrome Web Store and Firefox AMO from a single source tree.
+
 ## The Problem
 
 Customer service is disappearing.
