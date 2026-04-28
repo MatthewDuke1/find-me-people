@@ -161,9 +161,64 @@ function openUrl(url) {
   document.body.removeChild(a);
 }
 
+// Review prompt: persistent footer link + one-time toast after the user
+// has demonstrably gotten value (PROMPT_THRESHOLD successful copies).
+// Both review URLs become valid the moment the extension publishes;
+// they 404 in the interim, which is expected for unpublished builds.
+const REVIEW_URLS = {
+  chrome:  "https://chromewebstore.google.com/detail/find-me-people",
+  firefox: "https://addons.mozilla.org/firefox/addon/find-me-people/",
+};
+const COPY_COUNT_KEY = "fmp_copy_count";
+const PROMPT_DISMISSED_KEY = "fmp_review_prompt_dismissed";
+const PROMPT_THRESHOLD = 5;
+
+function isFirefox() { return navigator.userAgent.includes("Firefox"); }
+function getReviewUrl() { return isFirefox() ? REVIEW_URLS.firefox : REVIEW_URLS.chrome; }
+
+function getCopyCount() {
+  try { return parseInt(localStorage.getItem(COPY_COUNT_KEY), 10) || 0; }
+  catch (_) { return 0; }
+}
+function incrementCopyCount() {
+  try {
+    const n = getCopyCount() + 1;
+    localStorage.setItem(COPY_COUNT_KEY, String(n));
+    return n;
+  } catch (_) { return 0; }
+}
+function isPromptDismissed() {
+  try { return localStorage.getItem(PROMPT_DISMISSED_KEY) === "1"; }
+  catch (_) { return true; }
+}
+function dismissPrompt() {
+  try { localStorage.setItem(PROMPT_DISMISSED_KEY, "1"); } catch (_) {}
+}
+function shouldShowReviewPrompt() {
+  return !isPromptDismissed() && getCopyCount() >= PROMPT_THRESHOLD;
+}
+
+function renderReviewToastHtml() {
+  if (!shouldShowReviewPrompt()) return "";
+  return `
+    <div class="review-toast" id="review-toast">
+      <button class="review-toast-close" data-review-action="dismiss" aria-label="Dismiss">&times;</button>
+      <div class="review-toast-title"><span class="star">&#9733;</span> Enjoying Find Me People?</div>
+      <div class="review-toast-body">A quick review really helps reach more people who need this.</div>
+      <div class="review-toast-actions">
+        <button class="review-btn-primary" data-review-action="rate">Rate it</button>
+        <button class="review-btn-secondary" data-review-action="dismiss">Not now</button>
+      </div>
+    </div>`;
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   const contentEl = document.getElementById("content");
   const siteEl = document.getElementById("site-url");
+
+  // Always-visible footer link -- target depends on browser
+  const rateLink = document.getElementById("rate-link");
+  if (rateLink) rateLink.href = getReviewUrl();
 
   // Get current tab
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -208,6 +263,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     const total = emails.length + phones.length;
 
     let html = "";
+
+    // Review prompt toast (renders only after PROMPT_THRESHOLD successful copies)
+    html += renderReviewToastHtml();
 
     // Status bar
     if (total > 0) {
@@ -370,6 +428,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     });
 
+    // Review toast actions: "Rate it" opens store + dismisses; "Not now" / X just dismisses
+    contentEl.querySelectorAll("[data-review-action]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (btn.dataset.reviewAction === "rate") openUrl(getReviewUrl());
+        dismissPrompt();
+        const toast = document.getElementById("review-toast");
+        if (toast) toast.remove();
+      });
+    });
+
     document.getElementById("rescan-btn").addEventListener("click", () => {
       contentEl.innerHTML = '<div class="scanning"><div class="spinner"></div><p>Rescanning...</p></div>';
       chrome.scripting.executeScript(
@@ -396,6 +465,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 function copyToClipboard(text) {
   navigator.clipboard.writeText(text);
+  incrementCopyCount();
   const el = document.getElementById("copied");
   el.classList.add("show");
   setTimeout(() => el.classList.remove("show"), 1500);
