@@ -9,8 +9,16 @@ const VOIP_SERVICES = [
   { id: "teams",    name: "Teams",        buildUrl: (e164) => `https://teams.microsoft.com/l/call/0/0?users=4:${encodeURIComponent(e164)}` },
 ];
 
-// Boilerplate composer templates -- subject + body get URL-encoded into the chosen mail client
+// Boilerplate composer templates -- subject + body get URL-encoded into the chosen mail client.
+// "Blank" is intentionally first so the most common quick action ("just open Gmail with this
+// address loaded, I'll write the message myself") is always one click into the Compose panel.
 const EMAIL_TEMPLATES = [
+  {
+    id: "blank",
+    label: "Blank",
+    subject: "",
+    body: "",
+  },
   {
     id: "refund",
     label: "Refund",
@@ -152,6 +160,18 @@ function toE164(phone) {
 }
 
 function openUrl(url) {
+  // HTTPS URLs go through chrome.tabs.create -- the official extension API
+  // bypasses popup-blocker suppression that silently kills programmatic
+  // anchor.click() new-tab opens from MV3 popup contexts. Protocol URIs
+  // (mailto:, tel:, facetime-audio:, skype:, etc.) still need an anchor
+  // click so the OS protocol handler picks them up; chrome.tabs.create
+  // would just open an empty tab pointing at an unhandled URL.
+  if (/^https?:\/\//i.test(url)) {
+    if (typeof chrome !== "undefined" && chrome.tabs && chrome.tabs.create) {
+      chrome.tabs.create({ url });
+      return;
+    }
+  }
   const a = document.createElement("a");
   a.href = url;
   a.target = "_blank";
@@ -286,7 +306,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const currentClient = getSelectedClient();
       html += '<div class="section"><div class="section-title">Email</div>';
       // One client picker for the whole section -- preference persisted across popup opens
-      html += '<div class="client-picker"><span class="picker-label">Open in</span>';
+      html += '<div class="client-picker"><span class="picker-label">Templates open in</span>';
       EMAIL_CLIENTS.forEach((c) => {
         const sel = c.id === currentClient ? " selected" : "";
         html += `<button class="action-chip${sel}" data-set-client="${c.id}">${escapeHtml(c.name)}</button>`;
