@@ -4,6 +4,42 @@ A browser extension that instantly finds customer service emails and phone numbe
 
 > **Cross-browser:** a single Manifest V3 codebase that installs in both Chrome and Firefox (Firefox 121+).
 
+## Changelog
+
+### 1.3.2 -- 2026-04-27
+
+Major release. Cross-browser support and the new Compose / Call workflows.
+
+- **Firefox support.** Single MV3 codebase now installs in both Chrome and Firefox 121+ -- paired `service_worker` + `background.scripts` fallback, plus `browser_specific_settings.gecko` (id, `strict_min_version`, `data_collection_permissions: none`) for AMO signing.
+- **Compose templates for emails.** Each email card has a "Compose" toggle with chips for **Blank** (just open the chosen client with `To:` filled), Refund, Complaint, Cancel, Billing, and Support. Templates open in your preferred client -- Default mail app, Gmail web, or Outlook web -- and that choice persists in `localStorage`.
+- **Call-via deep links for phone numbers.** Each phone card has a "Call" toggle that hands the number off to your dialer of choice -- system phone, WhatsApp, Google Voice, FaceTime, or Microsoft Teams. Numbers are auto-normalized to E.164 first.
+- **Rate prompt.** A discrete `★ Rate Find Me People` link sits in the popup footer at all times, plus a one-time encouragement toast after you've copied 5 contacts. Browser-aware: Firefox users land on AMO, Chrome users on the Web Store.
+- **Compose reliability fix.** HTTPS opens (Gmail web, Outlook web, WhatsApp web, Google Voice, Teams) now route through `chrome.tabs.create` instead of a programmatic anchor click, so the MV3 popup-blocker no longer silently suppresses the new tab. Protocol URIs (`mailto:`, `tel:`, `facetime-audio:`) still use anchor click so OS handlers register them.
+- **Build scripts.** `build.sh` (bash) and `build.ps1` (PowerShell) produce store-ready zips for both stores from a single source tree.
+
+> *Why 1.3.2 and not 1.2.0?* The Compose / Call additions warrant a minor bump from 1.1.x; .2 leaves patch-version headroom for two same-day fixes if anything needs to ship fast.
+
+### 1.1.1 -- 2026-04-19
+
+Compatibility fix release.
+
+- **MV3 CSP fix.** Replaced inline `onclick` handlers with `addEventListener` so click-to-copy works correctly under Manifest V3's strict Content Security Policy. Without this, several click handlers silently failed in the popup.
+- Refined extension description in `manifest.json` for the Chrome Web Store listing.
+
+### 1.1.0 -- 2026-04-12
+
+- **Business hours scanning.** The content script extracts business hours from three sources, in confidence order: Schema.org `openingHours` / `openingHoursSpecification` JSON-LD (highest), microdata `[itemprop="openingHours"]`, then keyword-anchored text patterns (`Mon-Fri 9am-5pm`, `Hours: 09:00 - 17:00`, etc.). The popup surfaces an **Open Now / Closed Now** banner with today's hours highlighted and a deduped weekly schedule below.
+
+### 1.0.0 -- 2026-04-11
+
+Initial release.
+
+- **Auto-scans every page** for emails, phone numbers, and contact-page links.
+- **Click to copy.** Tap any email or phone in the popup to copy it to the clipboard instantly.
+- **Relevance scoring.** `support@`, `help@`, `care@` score green ("Likely support"); `noreply`, `careers`, `marketing`, `hr@` filter to the bottom. Phone numbers near "customer service" / "contact us" / "call us" get a boost; numbers near "fax" get a penalty.
+- **Badge count** on the toolbar icon shows how many contacts were found on the current page at a glance.
+- **Minimal permissions** -- `activeTab` and `scripting` only. Nothing leaves the browser; no servers, no analytics, no tracking.
+
 ## The Problem
 
 Customer service is disappearing.

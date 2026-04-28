@@ -183,11 +183,11 @@ function openUrl(url) {
 
 // Review prompt: persistent footer link + one-time toast after the user
 // has demonstrably gotten value (PROMPT_THRESHOLD successful copies).
-// Both review URLs become valid the moment the extension publishes;
-// they 404 in the interim, which is expected for unpublished builds.
+// Live store URLs -- Chrome listing carries the published extension ID;
+// the /reviews suffix lands users directly on the rating tab.
 const REVIEW_URLS = {
-  chrome:  "https://chromewebstore.google.com/detail/find-me-people",
-  firefox: "https://addons.mozilla.org/firefox/addon/find-me-people/",
+  chrome:  "https://chromewebstore.google.com/detail/find-me-people/ngfklhkcicocfchdmepiajdmboialikf/reviews",
+  firefox: "https://addons.mozilla.org/addon/find-me-people/",
 };
 const COPY_COUNT_KEY = "fmp_copy_count";
 const PROMPT_DISMISSED_KEY = "fmp_review_prompt_dismissed";
