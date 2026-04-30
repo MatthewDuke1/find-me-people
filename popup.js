@@ -393,7 +393,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     html += "</div>";
 
     // Rescan button
-    html += '<button class="rescan-btn" id="rescan-btn">Rescan this page</button>';
+    html += '<button class="rescan-btn" id="rescan-btn">Rescan this site</button>';
 
     contentEl.innerHTML = html;
 
