@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Find Me People",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Instantly find customer service emails, phone numbers & more on any website. Companies are making it harder -- we make it easier",
   "permissions": ["activeTab", "scripting"],
   "host_permissions": ["<all_urls>"],
