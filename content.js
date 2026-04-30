@@ -91,6 +91,23 @@
       }
     });
 
+    // 1b. Cloudflare email obfuscation -- many enterprise sites wrap addresses
+    // as <a class="__cf_email__" data-cfemail="HEX">[email&nbsp;protected]</a>
+    // and rely on a CF script to decode them in the browser. The decoded text
+    // sometimes never lands in the DOM (script blocked, error, lazy load), so
+    // we decode the data-cfemail attribute directly. This is the same XOR-key
+    // scheme CF uses, equivalent to the JS they ship.
+    document.querySelectorAll('[data-cfemail]').forEach((el) => {
+      const email = decodeCfEmail(el.getAttribute('data-cfemail'));
+      if (!email || !email.includes('@')) return;
+      const lower = email.toLowerCase();
+      if (seen.has(lower)) return;
+      seen.add(lower);
+      const context = getContext(el);
+      const score = scoreEmail(lower, context);
+      results.emails.push({ value: lower, context, score, source: "cf" });
+    });
+
     // 2. Scan contact-likely sections
     CONTACT_SELECTORS.forEach((selector) => {
       try {
@@ -371,6 +388,24 @@
     }
     const text = (node.textContent || "").substring(0, 200).replace(/\s+/g, " ").trim();
     return text;
+  }
+
+  // Cloudflare email-protection decoder: the data-cfemail attribute is hex.
+  // The first byte is the XOR key; each subsequent pair is one decoded char.
+  // Returns null on malformed input rather than a partial / garbage email.
+  function decodeCfEmail(encoded) {
+    if (!encoded || encoded.length < 4 || encoded.length % 2 !== 0) return null;
+    if (!/^[0-9a-fA-F]+$/.test(encoded)) return null;
+    try {
+      const key = parseInt(encoded.substring(0, 2), 16);
+      let email = "";
+      for (let i = 2; i < encoded.length; i += 2) {
+        email += String.fromCharCode(parseInt(encoded.substring(i, i + 2), 16) ^ key);
+      }
+      return email;
+    } catch (_) {
+      return null;
+    }
   }
 
   function scoreEmail(email, context) {
