@@ -264,7 +264,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 if (r) renderResults(r);
                 else renderEmpty();
               });
-            }, 500);
+            }, 1500);
           }
         );
         return;
@@ -469,7 +469,7 @@ document.addEventListener("DOMContentLoaded", async () => {
               if (r) renderResults(r);
               else renderEmpty();
             });
-          }, 500);
+          }, 1500);
         }
       );
     });
