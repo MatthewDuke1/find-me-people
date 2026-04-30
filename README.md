@@ -47,6 +47,14 @@ The result: reaching a real human for help has become a skill, not a right.
 
 ## Changelog
 
+### 1.3.3 -- 2026-04-30
+
+Reliability patch. No new features; the popup just gets the right answer more often on dynamic pages.
+
+- **Auto-rescan on DOM changes.** `content.js` now runs a `MutationObserver` over `document.body` and re-runs the page scan one second after the DOM settles. Catches contact info that lazy-loads after the initial `document_idle` scan -- the failure mode that produced "No contacts detected" on hydrating SPAs (Spirit, modern support pages, anything React/Next that streams). Debounced so live feeds don't burn CPU re-scanning every second.
+- **Longer wait after re-injecting `content.js`.** When Chrome reloads extensions on profile sign-in/out, existing tabs lose the content script. The popup re-injects it, but the previous 500 ms wait was routinely too short for SPA hydration; bumped to 1500 ms.
+- **Copy: "Rescan this page" -> "Rescan this site"** -- matches how users mentally model the action.
+
 ### 1.3.2 -- 2026-04-27
 
 Major release. Cross-browser support and the new Compose / Call workflows.
