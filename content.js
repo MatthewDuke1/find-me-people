@@ -427,4 +427,40 @@
     action: "updateBadge",
     count: totalFound,
   }).catch(() => {});
+
+  // Auto-rescan on DOM changes. SPA pages (Spirit, modern support sites)
+  // hydrate after document_idle and lazy-load contact info; the initial scan
+  // misses it. Debouncing on 1s of mutation idle keeps scanPage runs to at
+  // most once per second of page activity, which is plenty for catching
+  // newly-rendered footers, expanded chat panels, and fetched contact pages.
+  // Mutating the existing results object in place keeps the onMessage
+  // listener pointing at fresh data without re-registering.
+  if (document.body && typeof MutationObserver !== "undefined") {
+    const RESCAN_DEBOUNCE_MS = 1000;
+    let rescanTimer = null;
+
+    const rescanAndUpdate = () => {
+      const fresh = scanPage();
+      results.emails = fresh.emails;
+      results.phones = fresh.phones;
+      results.links = fresh.links;
+      results.context = fresh.context;
+      results.hours = fresh.hours;
+
+      const total = results.emails.length + results.phones.length;
+      chrome.runtime.sendMessage({
+        action: "updateBadge",
+        count: total,
+      }).catch(() => {});
+    };
+
+    const observer = new MutationObserver(() => {
+      if (rescanTimer) clearTimeout(rescanTimer);
+      rescanTimer = setTimeout(rescanAndUpdate, RESCAN_DEBOUNCE_MS);
+    });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+  }
 })();
