@@ -491,8 +491,10 @@
     { id: "support",   label: "Support",   subject: "Support Request",      body: ["Hello,", "", "I'm having an issue I'd appreciate help with.", "", "What's happening:", "[describe]", "", "What I've already tried:", "[any troubleshooting]", "", "Any guidance would be appreciated.", "", "Thanks,", "[Your name]"].join("\n") },
   ];
 
+  // Default (mailto:) was dropped -- relied on the OS having a configured
+  // mail handler, which most users don't. Two-option universe: Gmail
+  // (default selection) + Outlook.
   const EMAIL_CLIENTS = [
-    { id: "default", name: "Default", buildUrl: ({ to, subject, body }) => `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}` },
     { id: "gmail",   name: "Gmail",   buildUrl: ({ to, subject, body }) => `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}` },
     { id: "outlook", name: "Outlook", buildUrl: ({ to, subject, body }) => `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(to)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}` },
   ];
@@ -523,14 +525,18 @@
   }
 
   async function spGetClient() {
-    if (!chrome.storage || !chrome.storage.local) return "default";
+    // Normalize legacy "default" (and any unknown value) to "gmail" so users
+    // who set a preference under the old 3-option picker still land on a
+    // working chip.
+    if (!chrome.storage || !chrome.storage.local) return "gmail";
     return new Promise((resolve) => {
       try {
         chrome.storage.local.get([SP_CLIENT_KEY], (r) => {
-          resolve(r[SP_CLIENT_KEY] || "default");
+          const stored = r[SP_CLIENT_KEY];
+          resolve(stored === "gmail" || stored === "outlook" ? stored : "gmail");
         });
       } catch (_) {
-        resolve("default");
+        resolve("gmail");
       }
     });
   }
