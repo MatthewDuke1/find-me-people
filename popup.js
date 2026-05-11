@@ -119,13 +119,10 @@ const EMAIL_TEMPLATES = [
   },
 ];
 
+// Default (mailto:) was dropped -- it relied on the OS having a configured
+// default mail handler, which most users don't, so the chip looked like it
+// did nothing. Two-option universe now: Gmail (default selection) + Outlook.
 const EMAIL_CLIENTS = [
-  {
-    id: "default",
-    name: "Default",
-    buildUrl: ({ to, subject, body }) =>
-      `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
-  },
   {
     id: "gmail",
     name: "Gmail",
@@ -143,8 +140,13 @@ const EMAIL_CLIENTS = [
 const CLIENT_STORAGE_KEY = "fmp_email_client";
 
 function getSelectedClient() {
-  try { return localStorage.getItem(CLIENT_STORAGE_KEY) || "default"; }
-  catch (_) { return "default"; }
+  // Normalize the old "default" value (and any other unrecognized value) to
+  // "gmail" so users who saved a preference under the prior 3-option UI land
+  // on a working chip instead of seeing no selection.
+  try {
+    const stored = localStorage.getItem(CLIENT_STORAGE_KEY);
+    return stored === "gmail" || stored === "outlook" ? stored : "gmail";
+  } catch (_) { return "gmail"; }
 }
 
 function setSelectedClient(id) {
