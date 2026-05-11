@@ -47,6 +47,16 @@ The result: reaching a real human for help has become a skill, not a right.
 
 ## Changelog
 
+### 1.4.0 -- 2026-05-10
+
+New surface release. Most users never click the toolbar icon -- the side panel makes contacts discoverable inline on every page.
+
+- **Side panel overlay.** A small green pull-tab on the right edge of every page where the scan found contacts; click it to expand a panel that lists the same ranked emails and phones the popup shows, with click-to-copy. Designed to match the discovery pattern users already know from Honey / Capital One Shopping / Rakuten.
+- **Master toggle.** New "Side panel on pages" switch in the popup (default ON). Flipping it instantly hides panels on every open tab.
+- **Per-domain dismiss.** "Hide on this site" button in the panel footer suppresses the panel on that hostname for 7 days.
+- **CSS isolation via Shadow DOM.** Host-page styles can't bleed into the panel and vice versa.
+- **New permission: `storage`.** Required to persist the two preferences above (master toggle + per-domain dismissal timestamp). Nothing else is stored; nothing leaves the browser.
+
 ### 1.3.3 -- 2026-04-30
 
 Reliability patch. No new features; the popup just gets the right answer more often on dynamic pages.
