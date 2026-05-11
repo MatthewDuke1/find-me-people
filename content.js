@@ -405,8 +405,29 @@
   }
 
   function formatPhone(phone) {
-    // Clean up and return readable format
-    return phone.replace(/\s+/g, " ").trim();
+    // Normalize whatever the input format (raw 10/11-digit string from tel:
+    // links, or a free-text match like "1-800-555-1212" or "123.456.7890")
+    // into a consistent US display format: (NNN) NNN-NNNN. International or
+    // shorter numbers fall through to a light whitespace cleanup so we
+    // don't mangle them.
+    const raw = String(phone).trim();
+    const digits = raw.replace(/\D/g, "");
+
+    // Plain US 10-digit
+    if (digits.length === 10) {
+      return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+    }
+    // US 11-digit with leading country code 1 -- drop the 1 for display since
+    // domestic readers parse "(800) 555-1212" faster than "+1 (800) 555-1212".
+    // The E.164 conversion in popup.js / content.js (toE164) re-adds it for
+    // VOIP deep links, so call/dialer routing is unaffected.
+    if (digits.length === 11 && digits.startsWith("1")) {
+      return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+    }
+    // Anything else (international, partial 7-digit local, vanity numbers
+    // with letters that got stripped to fewer than 10 digits): preserve
+    // whatever the page had, just collapse whitespace.
+    return raw.replace(/\s+/g, " ");
   }
 
   // Run scan and store results
