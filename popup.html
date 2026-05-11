@@ -179,6 +179,27 @@
     .review-btn-secondary { background: transparent; color: #a1a1aa; border-color: #27272a; }
     .review-btn-secondary:hover { color: #fafafa; border-color: #4ade80; }
 
+    /* Settings row (Show side panel toggle) */
+    .settings-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 16px; border-top: 1px solid #1e1e1e;
+      font-size: 12px; color: #d4d4d8;
+    }
+    .settings-row .label { display: inline-flex; align-items: center; gap: 6px; }
+    .settings-row .label small { color: #71717a; font-size: 10px; }
+    .switch {
+      position: relative; width: 32px; height: 18px;
+      background: #27272a; border-radius: 999px; cursor: pointer;
+      transition: background 0.15s; flex-shrink: 0;
+    }
+    .switch::after {
+      content: ""; position: absolute; top: 2px; left: 2px;
+      width: 14px; height: 14px; border-radius: 50%; background: #fafafa;
+      transition: transform 0.15s;
+    }
+    .switch.on { background: #4ade80; }
+    .switch.on::after { transform: translateX(14px); }
+
     /* Always-visible rate footer link */
     .rate-footer {
       text-align: center; padding: 8px 16px 12px;
@@ -204,6 +225,11 @@
       <div class="spinner"></div>
       <p>Scanning page for contacts...</p>
     </div>
+  </div>
+
+  <div class="settings-row">
+    <span class="label">Side panel on pages <small>shows contacts inline</small></span>
+    <button class="switch" id="side-panel-toggle" role="switch" aria-checked="true" aria-label="Toggle side panel on pages"></button>
   </div>
 
   <div class="rate-footer">

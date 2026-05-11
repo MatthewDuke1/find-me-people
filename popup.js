@@ -240,6 +240,24 @@ document.addEventListener("DOMContentLoaded", async () => {
   const rateLink = document.getElementById("rate-link");
   if (rateLink) rateLink.href = getReviewUrl();
 
+  // Side panel master toggle -- persisted to chrome.storage.local so the
+  // content scripts on every tab can read it. Default is ON.
+  const SP_MASTER_KEY = "fmp_side_panel_enabled";
+  const spToggle = document.getElementById("side-panel-toggle");
+  if (spToggle && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get([SP_MASTER_KEY], (r) => {
+      const on = r[SP_MASTER_KEY] !== false;
+      spToggle.classList.toggle("on", on);
+      spToggle.setAttribute("aria-checked", on ? "true" : "false");
+    });
+    spToggle.addEventListener("click", () => {
+      const willBeOn = !spToggle.classList.contains("on");
+      spToggle.classList.toggle("on", willBeOn);
+      spToggle.setAttribute("aria-checked", willBeOn ? "true" : "false");
+      chrome.storage.local.set({ [SP_MASTER_KEY]: willBeOn });
+    });
+  }
+
   // Get current tab
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const RESTRICTED_PROTOCOLS = ["chrome://", "about:", "moz-extension://", "chrome-extension://", "resource://", "view-source:"];
