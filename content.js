@@ -467,6 +467,82 @@
   }
 
   // ===================================================================
+  // SHARED ACTIONS: Compose templates and VOIP deep links
+  // Mirrors the popup's tables so the side panel can hand off contacts
+  // to the user's chosen mail client or dialer with the same UX. Kept
+  // in sync manually with popup.js -- if you add a service or template,
+  // update both files.
+  // ===================================================================
+
+  const VOIP_SERVICES = [
+    { id: "tel",      name: "Phone",        buildUrl: (e164) => `tel:${e164}` },
+    { id: "whatsapp", name: "WhatsApp",     buildUrl: (e164) => `https://wa.me/${e164.replace(/^\+/, "")}` },
+    { id: "gvoice",   name: "Google Voice", buildUrl: (e164) => `https://voice.google.com/u/0/calls?a=nc,${encodeURIComponent(e164)}` },
+    { id: "facetime", name: "FaceTime",     buildUrl: (e164) => `facetime-audio:${e164}` },
+    { id: "teams",    name: "Teams",        buildUrl: (e164) => `https://teams.microsoft.com/l/call/0/0?users=4:${encodeURIComponent(e164)}` },
+  ];
+
+  const EMAIL_TEMPLATES = [
+    { id: "blank",     label: "Blank",     subject: "",                     body: "" },
+    { id: "refund",    label: "Refund",    subject: "Refund Request",       body: ["Hello,", "", "I'd like to request a refund for [order number / purchase date].", "", "Reason: [briefly describe]", "", "Please let me know what additional information you need to process this. I appreciate your help.", "", "Thank you,", "[Your name]"].join("\n") },
+    { id: "complaint", label: "Complaint", subject: "Customer Complaint",   body: ["Hello,", "", "I'm writing to share a concern about a recent experience with [product/service].", "", "What happened:", "[describe the issue]", "", "What I'd like to see resolved:", "[desired outcome]", "", "I appreciate your time and look forward to your response.", "", "Best regards,", "[Your name]"].join("\n") },
+    { id: "cancel",    label: "Cancel",    subject: "Cancellation Request", body: ["Hello,", "", "I'd like to cancel my [account / subscription / service].", "", "Account details: [email or account number]", "Effective date: [date or \"as soon as possible\"]", "", "Please confirm the cancellation and let me know if anything further is needed on my end.", "", "Thank you,", "[Your name]"].join("\n") },
+    { id: "billing",   label: "Billing",   subject: "Billing Question",     body: ["Hello,", "", "I have a question about a charge on my account:", "", "- Date: [date]", "- Amount: [amount]", "- Description: [what was charged]", "", "[Your question or concern]", "", "Could you please look into this and get back to me?", "", "Thank you,", "[Your name]"].join("\n") },
+    { id: "support",   label: "Support",   subject: "Support Request",      body: ["Hello,", "", "I'm having an issue I'd appreciate help with.", "", "What's happening:", "[describe]", "", "What I've already tried:", "[any troubleshooting]", "", "Any guidance would be appreciated.", "", "Thanks,", "[Your name]"].join("\n") },
+  ];
+
+  const EMAIL_CLIENTS = [
+    { id: "default", name: "Default", buildUrl: ({ to, subject, body }) => `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}` },
+    { id: "gmail",   name: "Gmail",   buildUrl: ({ to, subject, body }) => `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}` },
+    { id: "outlook", name: "Outlook", buildUrl: ({ to, subject, body }) => `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(to)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}` },
+  ];
+
+  const SP_CLIENT_KEY = "fmp_side_panel_email_client";
+
+  function toE164(phone) {
+    let s = String(phone).replace(/[^\d+]/g, "");
+    if (s.startsWith("+")) return s;
+    if (s.length === 10) return "+1" + s;
+    if (s.length === 11 && s.startsWith("1")) return "+" + s;
+    return "+" + s;
+  }
+
+  // Content-script open-URL: anchor click works for both protocol URIs
+  // (mailto:, tel:, facetime-audio:) and HTTPS, since the click is a real
+  // user gesture and the page context isn't subject to the MV3 popup
+  // window's popup-blocker quirks. Attached to documentElement to avoid
+  // host-page body listeners.
+  function spOpenUrl(url) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.documentElement.appendChild(a);
+    a.click();
+    document.documentElement.removeChild(a);
+  }
+
+  async function spGetClient() {
+    if (!chrome.storage || !chrome.storage.local) return "default";
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get([SP_CLIENT_KEY], (r) => {
+          resolve(r[SP_CLIENT_KEY] || "default");
+        });
+      } catch (_) {
+        resolve("default");
+      }
+    });
+  }
+
+  function spSetClient(id) {
+    if (!chrome.storage || !chrome.storage.local) return;
+    try {
+      chrome.storage.local.set({ [SP_CLIENT_KEY]: id });
+    } catch (_) {}
+  }
+
+  // ===================================================================
   // SIDE PANEL OVERLAY
   // Injects a small green tab on the right edge of every page that
   // expands into a panel listing the same ranked contacts the popup
@@ -527,7 +603,7 @@
       .replace(/'/g, "&#39;");
   }
 
-  function spBuildBody(currentResults) {
+  function spBuildBody(currentResults, currentClient) {
     const total = currentResults.emails.length + currentResults.phones.length;
 
     let html = `
@@ -546,15 +622,34 @@
 
     if (currentResults.emails.length) {
       html += `<div class="section"><div class="section-title">Email</div>`;
-      currentResults.emails.slice(0, 5).forEach((e) => {
+      // Section-level client picker -- one preference for every template chip below
+      html += `<div class="client-picker"><span class="picker-label">Templates open in</span>`;
+      EMAIL_CLIENTS.forEach((c) => {
+        const sel = c.id === currentClient ? " selected" : "";
+        html += `<button class="chip sm${sel}" data-sp-set-client="${c.id}">${spEscape(c.name)}</button>`;
+      });
+      html += `</div>`;
+
+      currentResults.emails.slice(0, 5).forEach((e, idx) => {
         const sc = e.score >= 70 ? "high" : e.score >= 40 ? "mid" : "low";
         const lbl = e.score >= 70 ? "Likely support" : e.score >= 40 ? "Possible" : "Low match";
+        const escVal = spEscape(e.value);
+        const rowId = `email-${idx}`;
+        const tplChips = EMAIL_TEMPLATES.map(
+          (t) => `<button class="chip" data-sp-template="${t.id}" data-sp-email="${escVal}">${spEscape(t.label)}</button>`
+        ).join("");
         html += `
-          <div class="row" data-sp-copy="${spEscape(e.value)}">
-            <div class="val">${spEscape(e.value)}</div>
-            <div class="meta">
-              <span>Click to copy</span>
-              <span class="score score-${sc}">${lbl}</span>
+          <div class="row">
+            <div class="row-main" data-sp-copy="${escVal}">
+              <div class="val">${escVal}</div>
+              <div class="meta">
+                <span>Click to copy</span>
+                <span class="score score-${sc}">${lbl}</span>
+              </div>
+            </div>
+            <button class="row-toggle" data-sp-toggle="${rowId}">Compose <span class="caret">&#9662;</span></button>
+            <div class="row-actions" data-sp-panel="${rowId}">
+              <div class="chips">${tplChips}</div>
             </div>
           </div>
         `;
@@ -564,15 +659,27 @@
 
     if (currentResults.phones.length) {
       html += `<div class="section"><div class="section-title">Phone</div>`;
-      currentResults.phones.slice(0, 5).forEach((p) => {
+      currentResults.phones.slice(0, 5).forEach((p, idx) => {
         const sc = p.score >= 70 ? "high" : p.score >= 40 ? "mid" : "low";
         const lbl = p.score >= 70 ? "Likely support" : p.score >= 40 ? "Possible" : "Low match";
+        const escVal = spEscape(p.value);
+        const escE164 = spEscape(toE164(p.value));
+        const rowId = `phone-${idx}`;
+        const voipChips = VOIP_SERVICES.map(
+          (s) => `<button class="chip" data-sp-voip="${s.id}" data-sp-phone="${escE164}">${spEscape(s.name)}</button>`
+        ).join("");
         html += `
-          <div class="row" data-sp-copy="${spEscape(p.value)}">
-            <div class="val">${spEscape(p.value)}</div>
-            <div class="meta">
-              <span>Click to copy</span>
-              <span class="score score-${sc}">${lbl}</span>
+          <div class="row">
+            <div class="row-main" data-sp-copy="${escVal}">
+              <div class="val">${escVal}</div>
+              <div class="meta">
+                <span>Click to copy</span>
+                <span class="score score-${sc}">${lbl}</span>
+              </div>
+            </div>
+            <button class="row-toggle" data-sp-toggle="${rowId}">Call <span class="caret">&#9662;</span></button>
+            <div class="row-actions" data-sp-panel="${rowId}">
+              <div class="chips">${voipChips}</div>
             </div>
           </div>
         `;
@@ -584,8 +691,6 @@
         </div>
         <div class="footer">
           <button class="text-btn" data-sp-action="dismiss-site">Hide on this site</button>
-          <span class="footer-sep">&middot;</span>
-          <span class="footer-hint">Click toolbar icon for more</span>
         </div>
       </div>
       <div class="copied-toast">Copied</div>
@@ -716,10 +821,62 @@
       border-radius: 8px;
       padding: 8px 10px;
       margin-bottom: 5px;
-      cursor: pointer;
       transition: border-color 0.15s;
     }
     .row:hover { border-color: #4ade80; }
+    .row-main { cursor: pointer; }
+    .row-toggle {
+      background: none;
+      border: none;
+      color: #71717a;
+      font-size: 10px;
+      cursor: pointer;
+      padding: 5px 0 0;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      transition: color 0.15s;
+    }
+    .row-toggle:hover { color: #4ade80; }
+    .row-toggle .caret { display: inline-block; transition: transform 0.2s; }
+    .row-toggle.open .caret { transform: rotate(180deg); }
+    .row-actions { margin-top: 6px; display: none; }
+    .row-actions.open { display: block; }
+    .client-picker {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px;
+      padding: 0 0 8px;
+    }
+    .picker-label {
+      font-size: 9px;
+      color: #52525b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-right: 4px;
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .chip {
+      background: #18181b;
+      border: 1px solid #27272a;
+      color: #d4d4d8;
+      font-size: 10.5px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .chip:hover { border-color: #4ade80; color: #4ade80; }
+    .chip.selected {
+      background: rgba(74,222,128,0.15);
+      border-color: #4ade80;
+      color: #4ade80;
+    }
+    .chip.sm { font-size: 10px; padding: 2px 7px; }
     .val {
       font-size: 12.5px;
       font-weight: 600;
@@ -819,6 +976,55 @@
         }
       });
     });
+
+    // Per-row Compose/Call expand/collapse
+    shadow.querySelectorAll("[data-sp-toggle]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute("data-sp-toggle");
+        const panel = shadow.querySelector(`[data-sp-panel="${id}"]`);
+        if (panel) {
+          panel.classList.toggle("open");
+          btn.classList.toggle("open");
+        }
+      });
+    });
+
+    // Email client picker -> updates chrome.storage; re-render restores
+    // the selected highlight on the next rescan tick. For an immediate
+    // visual response, we also toggle the .selected class locally.
+    shadow.querySelectorAll("[data-sp-set-client]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute("data-sp-set-client");
+        spSetClient(id);
+        shadow.querySelectorAll("[data-sp-set-client]").forEach((b) => {
+          b.classList.toggle("selected", b.getAttribute("data-sp-set-client") === id);
+        });
+      });
+    });
+
+    // Compose template chip -> open chosen client with subject/body
+    shadow.querySelectorAll("[data-sp-template]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const tpl = EMAIL_TEMPLATES.find((t) => t.id === btn.getAttribute("data-sp-template"));
+        const clientId = await spGetClient();
+        const client = EMAIL_CLIENTS.find((c) => c.id === clientId) || EMAIL_CLIENTS[0];
+        const to = btn.getAttribute("data-sp-email");
+        if (tpl && to) spOpenUrl(client.buildUrl({ to, subject: tpl.subject, body: tpl.body }));
+      });
+    });
+
+    // VOIP chip -> open the chosen app/site with the phone number passed in
+    shadow.querySelectorAll("[data-sp-voip]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const svc = VOIP_SERVICES.find((s) => s.id === btn.getAttribute("data-sp-voip"));
+        const phone = btn.getAttribute("data-sp-phone");
+        if (svc && phone) spOpenUrl(svc.buildUrl(phone));
+      });
+    });
   }
 
   async function ensureSidePanel(currentResults) {
@@ -834,9 +1040,10 @@
       return;
     }
 
-    const [masterOn, dismissed] = await Promise.all([
+    const [masterOn, dismissed, currentClient] = await Promise.all([
       spGetMaster(),
       spIsDismissedForDomain(),
+      spGetClient(),
     ]);
 
     if (!masterOn || dismissed) {
@@ -845,12 +1052,19 @@
       return;
     }
 
-    const wasExpanded = (() => {
-      const prior = document.getElementById(SP_HOST_ID);
-      return prior ? prior.classList.contains("expanded") : false;
-    })();
+    // Capture state we want to survive a re-render: panel expand and any
+    // per-row Compose/Call toggles the user has currently open.
+    const prior = document.getElementById(SP_HOST_ID);
+    const wasExpanded = prior ? prior.classList.contains("expanded") : false;
+    const wasOpenRows = new Set();
+    if (prior && prior.shadowRoot) {
+      prior.shadowRoot.querySelectorAll(".row-toggle.open").forEach((t) => {
+        const id = t.getAttribute("data-sp-toggle");
+        if (id) wasOpenRows.add(id);
+      });
+    }
 
-    let host = document.getElementById(SP_HOST_ID);
+    let host = prior;
     if (!host) {
       host = document.createElement("div");
       host.id = SP_HOST_ID;
@@ -859,28 +1073,36 @@
       style.textContent = SP_CSS;
       shadow.appendChild(style);
       const container = document.createElement("div");
-      container.innerHTML = spBuildBody(currentResults);
+      container.innerHTML = spBuildBody(currentResults, currentClient);
       while (container.firstChild) shadow.appendChild(container.firstChild);
       document.documentElement.appendChild(host);
       spWireEvents(shadow, currentResults);
     } else {
       const shadow = host.shadowRoot;
-      // Remove everything except the <style>
       const style = shadow.querySelector("style");
       while (shadow.firstChild) shadow.removeChild(shadow.firstChild);
       if (style) shadow.appendChild(style);
       const container = document.createElement("div");
-      container.innerHTML = spBuildBody(currentResults);
+      container.innerHTML = spBuildBody(currentResults, currentClient);
       while (container.firstChild) shadow.appendChild(container.firstChild);
       if (wasExpanded) host.classList.add("expanded");
+      // Restore previously-open Compose/Call panels
+      wasOpenRows.forEach((id) => {
+        const toggle = shadow.querySelector(`[data-sp-toggle="${id}"]`);
+        const panel = shadow.querySelector(`[data-sp-panel="${id}"]`);
+        if (toggle) toggle.classList.add("open");
+        if (panel) panel.classList.add("open");
+      });
       spWireEvents(shadow, currentResults);
     }
   }
 
-  // Live-update if popup toggles the master setting on another tab
+  // Live-update if popup toggles the master setting on another tab, or if
+  // the user changes the email-client preference from any other tab's side
+  // panel -- both reads happen at ensureSidePanel rebuild time.
   if (chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === "local" && SP_MASTER_KEY in changes) {
+      if (area === "local" && (SP_MASTER_KEY in changes || SP_CLIENT_KEY in changes)) {
         ensureSidePanel(results);
       }
     });
