@@ -405,28 +405,90 @@
   }
 
   function formatPhone(phone) {
-    // Normalize whatever the input format (raw 10/11-digit string from tel:
-    // links, or a free-text match like "1-800-555-1212" or "123.456.7890")
-    // into a consistent US display format: (NNN) NNN-NNNN. International or
-    // shorter numbers fall through to a light whitespace cleanup so we
-    // don't mangle them.
+    // Normalize various input shapes (raw digits from tel: links, free-text
+    // like "1-800-555-1212" or "+44 20 7946 0958") into a consistent display
+    // format per country. US falls into (NNN) NNN-NNNN; major international
+    // formats get country-appropriate grouping. Unknown country codes get a
+    // generic "+CC NNN NNN NNNN" presentation rather than a wall of digits.
     const raw = String(phone).trim();
+    const hadPlus = raw.startsWith("+");
     const digits = raw.replace(/\D/g, "");
 
-    // Plain US 10-digit
+    // Helper to format a body of digits per a "groups" tuple, e.g. [3,3,4]
+    // -> "NNN NNN NNNN".
+    const group = (s, groups, sep) => {
+      const parts = [];
+      let i = 0;
+      for (const g of groups) {
+        parts.push(s.slice(i, i + g));
+        i += g;
+      }
+      if (i < s.length) parts.push(s.slice(i)); // trailing extras
+      return parts.filter(Boolean).join(sep || " ");
+    };
+
+    // US / Canada: 10 digits or 11 with leading 1 -> (NNN) NNN-NNNN.
+    // (We drop the country code for display; toE164() re-adds it for VOIP
+    // URLs so call routing is unaffected.)
     if (digits.length === 10) {
       return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
     }
-    // US 11-digit with leading country code 1 -- drop the 1 for display since
-    // domestic readers parse "(800) 555-1212" faster than "+1 (800) 555-1212".
-    // The E.164 conversion in popup.js / content.js (toE164) re-adds it for
-    // VOIP deep links, so call/dialer routing is unaffected.
     if (digits.length === 11 && digits.startsWith("1")) {
       return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
     }
-    // Anything else (international, partial 7-digit local, vanity numbers
-    // with letters that got stripped to fewer than 10 digits): preserve
-    // whatever the page had, just collapse whitespace.
+
+    // International: needs the leading + on the source for us to be confident
+    // about country-code parsing. If the page wrote "44 20 ..." without the +,
+    // we can't tell that apart from a US number with weird formatting.
+    if (hadPlus && digits.length >= 8) {
+      // UK +44: national numbers are 10 digits after the country code.
+      // London "20 xxxx xxxx", mobiles "7xxx xxxxxx", non-geo "3xxx xxxxxx".
+      if (digits.startsWith("44") && digits.length === 12) {
+        const national = digits.slice(2);
+        if (national.startsWith("20") || national.startsWith("11") || national.startsWith("12") || national.startsWith("13") || national.startsWith("14") || national.startsWith("15") || national.startsWith("16") || national.startsWith("17") || national.startsWith("18") || national.startsWith("19")) {
+          // Geographic 2-digit area code -> NN NNNN NNNN
+          return `+44 ${national.slice(0, 2)} ${national.slice(2, 6)} ${national.slice(6)}`;
+        }
+        return `+44 ${national.slice(0, 4)} ${national.slice(4)}`;
+      }
+      // Australia +61: 9 digits after country code -> "+61 N NNNN NNNN"
+      if (digits.startsWith("61") && digits.length === 11) {
+        const n = digits.slice(2);
+        return `+61 ${n[0]} ${n.slice(1, 5)} ${n.slice(5)}`;
+      }
+      // Germany +49: variable length, group as "+49 NNN NNN NNNN"
+      if (digits.startsWith("49") && digits.length >= 11) {
+        const n = digits.slice(2);
+        return `+49 ${group(n, [3, 3, 4])}`;
+      }
+      // France +33: 9 digits after CC -> "+33 N NN NN NN NN"
+      if (digits.startsWith("33") && digits.length === 11) {
+        const n = digits.slice(2);
+        return `+33 ${n[0]} ${n.slice(1, 3)} ${n.slice(3, 5)} ${n.slice(5, 7)} ${n.slice(7)}`;
+      }
+      // Japan +81: 9-10 digits after CC -> "+81 N NNNN NNNN"
+      if (digits.startsWith("81") && digits.length >= 11) {
+        const n = digits.slice(2);
+        return `+81 ${n[0]} ${n.slice(1, 5)} ${n.slice(5)}`;
+      }
+      // India +91: 10 digits after CC -> "+91 NNNNN NNNNN"
+      if (digits.startsWith("91") && digits.length === 12) {
+        const n = digits.slice(2);
+        return `+91 ${n.slice(0, 5)} ${n.slice(5)}`;
+      }
+      // Generic fallback for anything else with a + and enough digits:
+      // assume the first 1-3 digits are the country code (E.164 spec) and
+      // group the remainder in chunks of 3-4. Better than a wall of digits.
+      const ccLen = digits.length > 12 ? 3 : digits.length > 10 ? 2 : 1;
+      const cc = digits.slice(0, ccLen);
+      const rest = digits.slice(ccLen);
+      const rgroups = rest.length <= 7 ? [3, rest.length - 3] : rest.length <= 9 ? [3, 3, rest.length - 6] : [3, 3, 4];
+      return `+${cc} ${group(rest, rgroups)}`;
+    }
+
+    // Short / local / unparseable: preserve whatever the page had, just
+    // collapse whitespace so we don't mangle valid foreign numbers that
+    // didn't include a leading + on the page.
     return raw.replace(/\s+/g, " ");
   }
 
