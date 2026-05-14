@@ -105,6 +105,14 @@
     const bodyText = document.body ? document.body.innerText : "";
     extractFromText(bodyText, document.body, results, seen);
 
+    // 3b. Scan same-origin iframes. Sites that embed contact widgets,
+    // support chat panels, or "contact us" forms via iframe on their own
+    // subdomain hide the contact info inside an iframe document our normal
+    // body scan can't see. Cross-origin iframes are blocked by the browser
+    // security model and are skipped silently. Same-origin (including same
+    // sub-origin) is readable per the same-origin policy.
+    scanSameOriginIframes(results, seen);
+
     // 4. Look for contact page links
     document.querySelectorAll("a").forEach((a) => {
       const href = a.href || "";
@@ -318,6 +326,66 @@
       });
     }
     return found;
+  }
+
+  // Walk every iframe on the page; for any that is same-origin (i.e. we can
+  // access contentDocument without SecurityError), recurse the scanner's
+  // text-extraction step into its body. Bounded to one level of recursion
+  // to avoid pathological deeply-nested iframe trees from chat widgets.
+  function scanSameOriginIframes(results, seen, depth) {
+    depth = depth || 0;
+    if (depth > 1) return; // cap recursion
+    const frames = document.querySelectorAll("iframe");
+    for (let i = 0; i < frames.length; i++) {
+      const frame = frames[i];
+      let doc = null;
+      try {
+        // Accessing contentDocument on a cross-origin iframe throws
+        // SecurityError -- we catch it and continue. Same-origin returns
+        // the inner Document we can scan.
+        doc = frame.contentDocument || (frame.contentWindow && frame.contentWindow.document);
+      } catch (_) {
+        doc = null;
+      }
+      if (!doc || !doc.body) continue;
+
+      // Extract from the iframe's body innerText, plus any mailto/tel anchors
+      // it carries -- those are higher-confidence than free text.
+      try {
+        doc.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
+          const email = (el.getAttribute("href") || "").replace("mailto:", "").split("?")[0].toLowerCase();
+          if (!email || seen.has(email) || !email.includes("@")) return;
+          seen.add(email);
+          const context = "iframe: " + (frame.title || frame.name || frame.src || "(embedded)");
+          results.emails.push({
+            value: email,
+            context,
+            score: scoreEmail(email, context),
+            source: "iframe-mailto",
+          });
+        });
+        doc.querySelectorAll('a[href^="tel:"]').forEach((el) => {
+          const phone = (el.getAttribute("href") || "").replace("tel:", "").replace(/\s/g, "");
+          if (!phone || seen.has(phone) || phone.length < 10) return;
+          seen.add(phone);
+          const context = "iframe: " + (frame.title || frame.name || frame.src || "(embedded)");
+          results.phones.push({
+            value: formatPhone(phone),
+            context,
+            score: 90,
+            source: "iframe-tel",
+          });
+        });
+
+        const text = (doc.body && doc.body.innerText) || "";
+        if (text) {
+          extractFromText(text, doc.body, results, seen);
+        }
+      } catch (_) {
+        // SecurityError mid-walk (happens when an iframe re-navigates to a
+        // cross-origin URL between our access check and the read). Skip.
+      }
+    }
   }
 
   function extractFromText(text, parentEl, results, seen) {
