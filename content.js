@@ -530,6 +530,46 @@
     return "+" + s;
   }
 
+  // vCard builders (duplicated from popup.js; small enough that the manual-
+  // sync cost is lower than the cost of splitting into a shared module).
+  function spBuildEmailVCard(email, org) {
+    const fn = org ? `${org} Support` : email;
+    return [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      `FN:${fn}`,
+      org ? `ORG:${org}` : null,
+      `EMAIL;TYPE=WORK:${email}`,
+      "END:VCARD",
+    ].filter(Boolean).join("\r\n") + "\r\n";
+  }
+  function spBuildPhoneVCard(displayPhone, e164, org) {
+    const fn = org ? `${org} Support` : displayPhone;
+    return [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      `FN:${fn}`,
+      org ? `ORG:${org}` : null,
+      `TEL;TYPE=WORK,VOICE:${e164}`,
+      "END:VCARD",
+    ].filter(Boolean).join("\r\n") + "\r\n";
+  }
+  function spVCardFilename(org, label) {
+    const safe = (org || "contact").replace(/[^\w.-]+/g, "_").toLowerCase();
+    return `${safe}-${label}.vcf`;
+  }
+  function spDownloadVCard(content, filename) {
+    const blob = new Blob([content], { type: "text/vcard;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.documentElement.appendChild(a);
+    a.click();
+    document.documentElement.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
   // Content-script open-URL: anchor click works for both protocol URIs
   // (mailto:, tel:, facetime-audio:) and HTTPS, since the click is a real
   // user gesture and the page context isn't subject to the MV3 popup
@@ -674,7 +714,10 @@
                 <span class="score score-${sc}">${lbl}</span>
               </div>
             </div>
-            <button class="row-toggle" data-sp-toggle="${rowId}">Compose <span class="caret">&#9662;</span></button>
+            <div class="row-buttons">
+              <button class="row-toggle" data-sp-toggle="${rowId}">Compose <span class="caret">&#9662;</span></button>
+              <button class="row-toggle vcard-btn" data-sp-save-vcard="email" data-sp-value="${escVal}" title="Save as .vcf contact">&#11015; .vcf</button>
+            </div>
             <div class="row-actions" data-sp-panel="${rowId}">
               <div class="chips">${tplChips}</div>
             </div>
@@ -704,7 +747,10 @@
                 <span class="score score-${sc}">${lbl}</span>
               </div>
             </div>
-            <button class="row-toggle" data-sp-toggle="${rowId}">Call <span class="caret">&#9662;</span></button>
+            <div class="row-buttons">
+              <button class="row-toggle" data-sp-toggle="${rowId}">Call <span class="caret">&#9662;</span></button>
+              <button class="row-toggle vcard-btn" data-sp-save-vcard="phone" data-sp-value="${escVal}" data-sp-e164="${escE164}" title="Save as .vcf contact">&#11015; .vcf</button>
+            </div>
             <div class="row-actions" data-sp-panel="${rowId}">
               <div class="chips">${voipChips}</div>
             </div>
@@ -870,6 +916,8 @@
     .row-toggle.open .caret { transform: rotate(180deg); }
     .row-actions { margin-top: 6px; display: none; }
     .row-actions.open { display: block; }
+    .row-buttons { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .vcard-btn { font-variant-numeric: tabular-nums; }
     .client-picker {
       display: flex;
       flex-wrap: wrap;
@@ -1050,6 +1098,22 @@
         const svc = VOIP_SERVICES.find((s) => s.id === btn.getAttribute("data-sp-voip"));
         const phone = btn.getAttribute("data-sp-phone");
         if (svc && phone) spOpenUrl(svc.buildUrl(phone));
+      });
+    });
+
+    // Save .vcf button -> build vCard 3.0 blob and trigger download
+    shadow.querySelectorAll("[data-sp-save-vcard]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const kind = btn.getAttribute("data-sp-save-vcard");
+        const value = btn.getAttribute("data-sp-value");
+        const host = window.location.hostname.replace(/^www\./, "");
+        if (kind === "email") {
+          spDownloadVCard(spBuildEmailVCard(value, host), spVCardFilename(host, value.split("@")[0] || "email"));
+        } else if (kind === "phone") {
+          const e164 = btn.getAttribute("data-sp-e164") || toE164(value);
+          spDownloadVCard(spBuildPhoneVCard(value, e164, host), spVCardFilename(host, "phone"));
+        }
       });
     });
   }
