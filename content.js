@@ -91,6 +91,62 @@
       }
     });
 
+    // 1b. Obfuscation-buster pass. Sites that don't want bots scraping
+    // contact info rely on common defenses; here are the ones we defeat:
+    //   - Cloudflare email protection: <a data-cfemail="HEX"> + JS decode
+    //   - data-email attribute (plain or with HTML entities)
+    //   - aria-label / title attributes containing "Email: ..."
+    //   - HTML entity-encoded emails in attribute values
+    document.querySelectorAll("[data-cfemail]").forEach((el) => {
+      const email = decodeCfEmail(el.getAttribute("data-cfemail"));
+      if (!email || !email.includes("@")) return;
+      const lower = email.toLowerCase();
+      if (seen.has(lower)) return;
+      seen.add(lower);
+      results.emails.push({
+        value: lower,
+        context: getContext(el),
+        score: scoreEmail(lower, getContext(el)),
+        source: "cf",
+      });
+    });
+
+    document.querySelectorAll("[data-email], [data-mail]").forEach((el) => {
+      const raw = (el.getAttribute("data-email") || el.getAttribute("data-mail") || "").trim();
+      // Some sites store user@example.com, others "user [at] example [dot] com",
+      // others HTML entities. decodeMaybeObfuscatedEmail handles all three.
+      const email = decodeMaybeObfuscatedEmail(raw);
+      if (!email || !email.includes("@")) return;
+      const lower = email.toLowerCase();
+      if (seen.has(lower)) return;
+      seen.add(lower);
+      results.emails.push({
+        value: lower,
+        context: getContext(el),
+        score: scoreEmail(lower, getContext(el)),
+        source: "data-attr",
+      });
+    });
+
+    // aria-label and title attributes sometimes carry the email when the
+    // visible text is just an icon. e.g. <a aria-label="Email support">.
+    document.querySelectorAll("[aria-label], [title]").forEach((el) => {
+      const label = (el.getAttribute("aria-label") || el.getAttribute("title") || "");
+      if (!/@/.test(label)) return;
+      const matches = label.match(EMAIL_REGEX) || [];
+      matches.forEach((email) => {
+        const lower = email.toLowerCase();
+        if (seen.has(lower)) return;
+        seen.add(lower);
+        results.emails.push({
+          value: lower,
+          context: getContext(el),
+          score: scoreEmail(lower, getContext(el)),
+          source: "aria",
+        });
+      });
+    });
+
     // 2. Scan contact-likely sections
     CONTACT_SELECTORS.forEach((selector) => {
       try {
@@ -402,6 +458,41 @@
     if (lower.includes("toll") || lower.includes("free")) score += 10;
     if (lower.includes("fax")) score -= 30;
     return Math.max(0, Math.min(100, score));
+  }
+
+  // Cloudflare email-protection decoder. The data-cfemail attribute is hex;
+  // first byte is the XOR key, each subsequent pair XORs against it to give
+  // one ASCII char. Same algorithm as the JS Cloudflare ships, equivalent
+  // result without depending on their script firing on the page.
+  function decodeCfEmail(encoded) {
+    if (!encoded || encoded.length < 4 || encoded.length % 2 !== 0) return null;
+    if (!/^[0-9a-fA-F]+$/.test(encoded)) return null;
+    try {
+      const key = parseInt(encoded.substring(0, 2), 16);
+      let email = "";
+      for (let i = 2; i < encoded.length; i += 2) {
+        email += String.fromCharCode(parseInt(encoded.substring(i, i + 2), 16) ^ key);
+      }
+      return email;
+    } catch (_) { return null; }
+  }
+
+  // Reverse common human-readable obfuscations:
+  //   "user [at] example [dot] com"  -> "user@example.com"
+  //   "user (at) example (dot) com"  -> same
+  //   "user{at}example{dot}com"      -> same
+  // Returns the input unchanged if it already looks like a valid email.
+  function decodeMaybeObfuscatedEmail(raw) {
+    if (!raw) return null;
+    let s = String(raw).trim();
+    if (s.includes("@") && /\.[a-zA-Z]{2,}$/.test(s)) return s; // already plain
+    s = s
+      .replace(/\s*[\[\(\{]\s*at\s*[\]\)\}]\s*/gi, "@")
+      .replace(/\s+at\s+/gi, "@")
+      .replace(/\s*[\[\(\{]\s*dot\s*[\]\)\}]\s*/gi, ".")
+      .replace(/\s+dot\s+/gi, ".")
+      .replace(/\s+/g, "");
+    return s.includes("@") ? s : null;
   }
 
   function formatPhone(phone) {
