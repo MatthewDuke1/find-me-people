@@ -11,6 +11,53 @@
     .header h1 span { font-size: 20px; }
     .header .site { font-size: 11px; color: #71717a; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+    /* View tabs (On this page / History) */
+    .view-tabs { display: flex; border-bottom: 1px solid #1e1e1e; padding: 0 16px; }
+    .view-tab {
+      background: none; border: none; color: #71717a;
+      font-size: 12px; font-weight: 600; padding: 9px 12px;
+      cursor: pointer; font-family: inherit;
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .view-tab:hover { color: #fafafa; }
+    .view-tab.active { color: #a78bfa; border-bottom-color: #a78bfa; }
+
+    /* History view */
+    .history-search {
+      margin: 10px 16px 6px; padding: 7px 10px;
+      background: #18181b; border: 1px solid #27272a; border-radius: 6px;
+      color: #fafafa; font-size: 12px; font-family: inherit; width: calc(100% - 32px);
+      outline: none;
+    }
+    .history-search:focus { border-color: #a78bfa; }
+    .history-list { padding: 0 16px 12px; max-height: 380px; overflow-y: auto; }
+    .history-list::-webkit-scrollbar { width: 4px; }
+    .history-list::-webkit-scrollbar-thumb { background: #27272a; border-radius: 4px; }
+    .history-item {
+      background: #111113; border: 1px solid #1e1e1e; border-radius: 8px;
+      padding: 8px 10px; margin-bottom: 5px; cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .history-item:hover { border-color: #a78bfa; }
+    .history-row1 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .history-value { font-size: 13px; font-weight: 600; color: #fafafa; word-break: break-all; }
+    .history-when { font-size: 10px; color: #71717a; white-space: nowrap; flex-shrink: 0; }
+    .history-row2 { font-size: 10px; color: #52525b; margin-top: 2px; display: flex; gap: 6px; }
+    .history-type {
+      font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 6px;
+      background: #18181b; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .history-empty { padding: 40px 16px; text-align: center; color: #52525b; font-size: 13px; }
+    .history-footer {
+      padding: 8px 16px 12px; text-align: center; border-top: 1px solid #1e1e1e;
+    }
+    .history-clear {
+      background: none; border: none; color: #71717a;
+      font-size: 11px; cursor: pointer; font-family: inherit;
+    }
+    .history-clear:hover { color: #f87171; }
+
     .status { padding: 10px 16px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
     .status .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
     .dot-green { background: #4ade80; }
@@ -218,6 +265,11 @@
   <div class="header">
     <h1><span>&#128100;</span> Find Me People</h1>
     <div class="site" id="site-url">Scanning...</div>
+  </div>
+
+  <div class="view-tabs">
+    <button class="view-tab active" data-view="now">On this page</button>
+    <button class="view-tab" data-view="history">History</button>
   </div>
 
   <div id="content">
