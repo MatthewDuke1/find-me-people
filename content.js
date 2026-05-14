@@ -667,7 +667,7 @@
         ).join("");
         html += `
           <div class="row">
-            <div class="row-main" data-sp-copy="${escVal}">
+            <div class="row-main" data-sp-copy="${escVal}" data-sp-copy-type="email" data-sp-copy-score="${e.score}">
               <div class="val">${escVal}</div>
               <div class="meta">
                 <span>Click to copy</span>
@@ -697,7 +697,7 @@
         ).join("");
         html += `
           <div class="row">
-            <div class="row-main" data-sp-copy="${escVal}">
+            <div class="row-main" data-sp-copy="${escVal}" data-sp-copy-type="phone" data-sp-copy-score="${p.score}">
               <div class="val">${escVal}</div>
               <div class="meta">
                 <span>Click to copy</span>
@@ -1000,6 +1000,20 @@
         if (toast) {
           toast.classList.add("show");
           setTimeout(() => toast.classList.remove("show"), 1200);
+        }
+        // Record into shared history so popup's History view picks it up.
+        const type = el.getAttribute("data-sp-copy-type");
+        const score = parseInt(el.getAttribute("data-sp-copy-score") || "0", 10) || 0;
+        if ((type === "email" || type === "phone") && chrome.storage && chrome.storage.local) {
+          const host = window.location.hostname.replace(/^www\./, "");
+          const HKEY = "fmp_history";
+          chrome.storage.local.get([HKEY], (r) => {
+            const hist = Array.isArray(r[HKEY]) ? r[HKEY] : [];
+            const filtered = hist.filter((e) => e.value !== value);
+            filtered.unshift({ value, type, hostname: host, score, timestamp: Date.now() });
+            if (filtered.length > 50) filtered.length = 50;
+            chrome.storage.local.set({ [HKEY]: filtered });
+          });
         }
       });
     });
