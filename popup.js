@@ -402,11 +402,43 @@ document.addEventListener("DOMContentLoaded", async () => {
       html += "</div>";
     }
 
-    // Empty state
+    // Empty state -- when the page has nothing scrapable, give the user
+    // four hostname-aware fallback paths instead of a dead end. Each link
+    // opens in a new tab so they don't lose the popup context.
     if (total === 0 && links.length === 0) {
+      let hostname = "";
+      let homepage = "";
+      let brand = "";
+      try {
+        const u = new URL(tab.url);
+        hostname = u.hostname;
+        homepage = u.origin + "/";
+        // Strip leading www. and any subdomain on a multi-part host for the
+        // search query; e.g. "customersupport.spirit.com" -> "spirit"
+        const stripped = hostname.replace(/^www\./, "");
+        const parts = stripped.split(".");
+        brand = parts.length >= 2 ? parts[parts.length - 2] : stripped;
+      } catch (_) {}
+      const q = encodeURIComponent(`${brand || hostname} customer service phone email`);
+      const bbbQuery = encodeURIComponent(brand || hostname);
+      const fallbacks = [
+        { href: homepage, label: "Check the homepage footer", hint: hostname },
+        { href: `https://www.google.com/search?q=${q}`, label: `Search "${brand || hostname} customer service"`, hint: "google.com" },
+        { href: `https://www.bbb.org/search?find_text=${bbbQuery}`, label: "Look up on Better Business Bureau", hint: "bbb.org" },
+        { href: "https://reportfraud.ftc.gov/", label: "Report a hard-to-reach business", hint: "FTC consumer help" },
+      ].filter((f) => f.href);
+
       html += `<div class="empty">
-        <strong>No contacts detected</strong><br>
-        This site may hide its contact info. Try checking their footer, "About" page, or searching "[company name] customer service" online.
+        <strong>Couldn't find contacts on this page</strong>
+        <p class="empty-sub">Some sites bury contact info. Try one of these:</p>
+        <div class="fallback-tips">
+          ${fallbacks.map((f) => `
+            <a class="fallback-tip" href="${escapeHtml(f.href)}" target="_blank" rel="noopener noreferrer">
+              <span class="fallback-label">${escapeHtml(f.label)}</span>
+              <span class="fallback-hint">${escapeHtml(f.hint)} &rsaquo;</span>
+            </a>
+          `).join("")}
+        </div>
       </div>`;
     }
 
