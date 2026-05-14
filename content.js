@@ -139,6 +139,14 @@
       return true;
     });
 
+    // 6. Fallback: if the in-DOM scan came up totally empty, fire a
+    // fire-and-forget background fetch of common same-origin contact
+    // pages (/contact, /about, /support) and merge any matches into
+    // results in place. Bounded to once per origin per session.
+    if (results.emails.length + results.phones.length === 0) {
+      fetchAndScanFallbackPages(results, seen);
+    }
+
     return results;
   }
 
@@ -318,6 +326,114 @@
       });
     }
     return found;
+  }
+
+  // Last-resort fallback: when scanning the current page yields zero
+  // contacts, GET a small list of common same-origin contact-page URLs
+  // (/contact, /about, /support, etc.), parse the responses, and merge any
+  // emails/phones into the existing results. Fire-and-forget by design --
+  // the popup's view may not pick up results from the first scan if the
+  // fetch hasn't returned yet; the user can hit Rescan or reopen the popup
+  // and the badge update will reflect new finds.
+  //
+  // Safety guards:
+  //   - sessionStorage flag: one attempt per origin per session
+  //   - credentials: 'omit' so we don't send the user's cookies (no
+  //     authenticated requests on their behalf)
+  //   - same-origin only; redirects to a different origin are rejected
+  //   - response size capped at 1 MB to bound parse latency
+  //   - max 3 candidate paths tried; stops at first one with results
+  async function fetchAndScanFallbackPages(results, seen) {
+    if (results.emails.length + results.phones.length > 0) return;
+    const origin = window.location.origin;
+    if (!/^https?:/.test(window.location.protocol)) return;
+
+    // Once-per-session-per-origin gate
+    try {
+      const CACHE_KEY = "__fmp_fallback_attempted";
+      if (sessionStorage.getItem(CACHE_KEY)) return;
+      sessionStorage.setItem(CACHE_KEY, "1");
+    } catch (_) {
+      // sessionStorage blocked (some privacy modes); bail rather than risk
+      // unbounded re-fetching on every rescan tick.
+      return;
+    }
+
+    const currentPath = (window.location.pathname || "/").replace(/\/$/, "") || "/";
+    const candidatePaths = [
+      "/contact", "/contact-us", "/about", "/about-us",
+      "/support", "/help", "/customer-service",
+    ];
+    const targets = candidatePaths.filter((p) => p !== currentPath).slice(0, 3);
+
+    for (const path of targets) {
+      try {
+        const url = origin + path;
+        const resp = await fetch(url, {
+          credentials: "omit",
+          redirect: "follow",
+          cache: "no-cache",
+        });
+        if (!resp.ok) continue;
+        // Reject responses that redirected away from the origin
+        try {
+          if (new URL(resp.url).origin !== origin) continue;
+        } catch (_) { continue; }
+
+        const text = await resp.text();
+        if (!text || text.length > 1024 * 1024) continue;
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, "text/html");
+        if (!doc || !doc.body) continue;
+
+        // mailto: / tel: anchors in the fetched HTML get a +10 boost over
+        // body-text matches -- explicit links on a contact page are high
+        // confidence signal.
+        doc.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
+          const email = (el.getAttribute("href") || "").replace("mailto:", "").split("?")[0].toLowerCase();
+          if (!email || !email.includes("@") || seen.has(email)) return;
+          seen.add(email);
+          const ctx = `from ${path}`;
+          results.emails.push({
+            value: email,
+            context: ctx,
+            score: Math.min(100, scoreEmail(email, ctx) + 10),
+            source: "fetch",
+          });
+        });
+        doc.querySelectorAll('a[href^="tel:"]').forEach((el) => {
+          const phone = (el.getAttribute("href") || "").replace("tel:", "").replace(/\s/g, "");
+          if (!phone || phone.length < 10 || seen.has(phone)) return;
+          seen.add(phone);
+          const ctx = `from ${path}`;
+          results.phones.push({
+            value: formatPhone(phone),
+            context: ctx,
+            score: 90,
+            source: "fetch",
+          });
+        });
+
+        // Body-text scan over the fetched page
+        const body = (doc.body && doc.body.innerText) || "";
+        if (body) extractFromText(body, doc.body, results, seen);
+
+        // Re-sort after merging fresh results
+        results.emails.sort((a, b) => b.score - a.score);
+        results.phones.sort((a, b) => b.score - a.score);
+
+        // Push an updated badge count so the toolbar reflects the new finds
+        const total = results.emails.length + results.phones.length;
+        try {
+          chrome.runtime.sendMessage({ action: "updateBadge", count: total }).catch(() => {});
+        } catch (_) {}
+
+        if (total > 0) return; // stop fetching once we have something
+      } catch (_) {
+        // Network error, parse error, blocked by CORS, etc. -- silent skip
+      }
+    }
   }
 
   function extractFromText(text, parentEl, results, seen) {
