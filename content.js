@@ -584,6 +584,94 @@
   const SP_MASTER_KEY = "fmp_side_panel_enabled";
   const SP_DISMISS_PREFIX = "fmp_side_panel_dismissed_";
   const SP_DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  const SP_TAB_TOP_KEY = "fmp_side_panel_tab_top"; // integer px, vertical-only
+
+  // Drag state for the collapsed tab (vertical-only repositioning).
+  // Lifted to module scope so the document-level mousemove/mouseup handlers
+  // installed once on first render can see it, and so the drag-vs-click
+  // suppression flag survives the shadow re-render between mouseup and the
+  // trailing click event the browser dispatches.
+  let spDragSession = null;
+  let spDragJustEnded = false;
+  let spDragGlobalHandlersInstalled = false;
+  const SP_DRAG_THRESHOLD_PX = 4;
+  const SP_TAB_HEIGHT_PX = 88;
+
+  function spClampTop(top) {
+    return Math.max(
+      10,
+      Math.min(window.innerHeight - SP_TAB_HEIGHT_PX - 10, top)
+    );
+  }
+
+  async function spGetTabTop() {
+    if (!chrome.storage || !chrome.storage.local) return null;
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get([SP_TAB_TOP_KEY], (r) => {
+          const v = r[SP_TAB_TOP_KEY];
+          resolve(typeof v === "number" ? v : null);
+        });
+      } catch (_) {
+        resolve(null);
+      }
+    });
+  }
+
+  function spSetTabTop(px) {
+    if (!chrome.storage || !chrome.storage.local) return;
+    try {
+      chrome.storage.local.set({ [SP_TAB_TOP_KEY]: Math.round(px) });
+    } catch (_) {}
+  }
+
+  function spInstallGlobalDragHandlers() {
+    if (spDragGlobalHandlersInstalled) return;
+    spDragGlobalHandlersInstalled = true;
+
+    document.addEventListener("mousemove", (e) => {
+      if (!spDragSession) return;
+      const dy = e.clientY - spDragSession.startY;
+      if (Math.abs(dy) > SP_DRAG_THRESHOLD_PX) spDragSession.moved = true;
+      if (spDragSession.moved) {
+        const newTop = spClampTop(spDragSession.startTop + dy);
+        spDragSession.host.style.top = newTop + "px";
+      }
+    });
+
+    document.addEventListener("mouseup", () => {
+      if (!spDragSession) return;
+      const { host, moved } = spDragSession;
+      const tabEl = host.shadowRoot && host.shadowRoot.querySelector(".tab");
+      if (tabEl) tabEl.classList.remove("dragging");
+      if (moved) {
+        spSetTabTop(host.getBoundingClientRect().top);
+        spDragJustEnded = true;
+        // Reset on next tick so the trailing click event sees the flag,
+        // but a separate later click expands the panel normally.
+        setTimeout(() => { spDragJustEnded = false; }, 50);
+      }
+      spDragSession = null;
+    });
+  }
+
+  function spAttachDragToTab(host) {
+    const tabEl = host.shadowRoot && host.shadowRoot.querySelector(".tab");
+    if (!tabEl) return;
+    tabEl.addEventListener("mousedown", (e) => {
+      // Left button only -- right-click / middle-click shouldn't start a drag
+      if (e.button !== 0) return;
+      spDragSession = {
+        host,
+        startY: e.clientY,
+        startTop: host.getBoundingClientRect().top,
+        moved: false,
+      };
+      tabEl.classList.add("dragging");
+      e.preventDefault();
+    });
+    spInstallGlobalDragHandlers();
+  }
 
   async function spGetMaster() {
     if (!chrome.storage || !chrome.storage.local) return true;
@@ -744,13 +832,16 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      cursor: pointer;
+      cursor: grab;
       box-shadow: -4px 0 14px rgba(0,0,0,0.25);
       position: relative;
       transition: transform 0.15s;
       color: #ffffff;
+      user-select: none;
     }
     .tab:hover { transform: translateX(-3px); }
+    .tab.dragging { cursor: grabbing; transition: none; }
+    .tab.dragging:hover { transform: none; }
     .tab-icon { font-size: 22px; line-height: 1; }
     .tab-count {
       position: absolute;
@@ -975,8 +1066,23 @@
     const host = shadow.host;
 
     shadow.querySelectorAll('[data-sp-action="expand"]').forEach((el) => {
-      el.addEventListener("click", () => host.classList.add("expanded"));
+      el.addEventListener("click", (e) => {
+        // The browser dispatches a trailing click after every mousedown+
+        // mouseup pair. If the user dragged the tab, swallow that click so
+        // the panel doesn't spuriously expand right after they finish
+        // repositioning.
+        if (spDragJustEnded) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        host.classList.add("expanded");
+      });
     });
+
+    // Wire vertical drag-to-reposition on the collapsed tab. Re-attached on
+    // every render since the tab DOM is rebuilt each ensureSidePanel pass.
+    spAttachDragToTab(host);
 
     shadow.querySelectorAll('[data-sp-action="collapse"]').forEach((el) => {
       el.addEventListener("click", () => host.classList.remove("expanded"));
@@ -1067,10 +1173,11 @@
       return;
     }
 
-    const [masterOn, dismissed, currentClient] = await Promise.all([
+    const [masterOn, dismissed, currentClient, storedTabTop] = await Promise.all([
       spGetMaster(),
       spIsDismissedForDomain(),
       spGetClient(),
+      spGetTabTop(),
     ]);
 
     if (!masterOn || dismissed) {
@@ -1103,6 +1210,12 @@
       container.innerHTML = spBuildBody(currentResults, currentClient);
       while (container.firstChild) shadow.appendChild(container.firstChild);
       document.documentElement.appendChild(host);
+      // Apply user-dragged position (if any) on first mount only -- after
+      // this, host.style.top survives the inner re-renders so further
+      // mutations don't snap the tab back to the CSS default.
+      if (storedTabTop !== null) {
+        host.style.top = spClampTop(storedTabTop) + "px";
+      }
       spWireEvents(shadow, currentResults);
     } else {
       const shadow = host.shadowRoot;
