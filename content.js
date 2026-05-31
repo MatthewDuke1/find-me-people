@@ -123,6 +123,13 @@
       }
     });
 
+    // 4b. Scan page-context globals. Many React/Next/Vue sites hydrate the
+    // page from a JSON blob hanging off `window.__NEXT_DATA__` or similar;
+    // when the visible DOM is sparse but the state blob has the contact,
+    // pulling from globals reveals what the DOM scan can't. Same technique
+    // Wappalyzer uses for tech fingerprinting.
+    scanPageGlobals(results, seen);
+
     // 5. Scan for hours of operation
     extractHours(results, hoursSeen);
 
@@ -318,6 +325,86 @@
       });
     }
     return found;
+  }
+
+  // Read common state-holding window globals from the page world. Content
+  // scripts run in an isolated world, so we inject a tiny <script> that
+  // serializes the targets into JSON and parks them on a hidden DOM bridge
+  // element we can read back. Capped at 500 KB to avoid the rare site that
+  // hydrates with a multi-MB state blob.
+  function scanPageGlobals(results, seen) {
+    if (!document.body) return;
+
+    let bridge;
+    let json = "";
+    try {
+      bridge = document.createElement("div");
+      bridge.id = "fmp-globals-bridge";
+      bridge.style.display = "none";
+      document.body.appendChild(bridge);
+
+      const script = document.createElement("script");
+      // Single self-executing IIFE: read each target, JSON-stringify with a
+      // replacer that skips functions / DOM nodes, stash on bridge.
+      script.textContent = "(function(){try{var T=['__NEXT_DATA__','__INITIAL_STATE__','__PRELOADED_STATE__','__NUXT__','__APOLLO_STATE__','__REACT_QUERY_STATE__','__remixContext','__sveltekit','appConfig','siteConfig','pageProps'];var o={};for(var i=0;i<T.length;i++){try{var v=window[T[i]];if(v!=null)o[T[i]]=v;}catch(e){}}try{if(window.Shopify)o.Shopify=window.Shopify;}catch(e){}var seen=new WeakSet();var rep=function(k,v){if(v&&typeof v==='object'){if(seen.has(v))return undefined;seen.add(v);}if(typeof v==='function')return undefined;if(v&&v.nodeType)return undefined;return v;};var s='';try{s=JSON.stringify(o,rep);}catch(e){}if(s&&s.length>500000)s=s.substring(0,500000);var el=document.getElementById('fmp-globals-bridge');if(el)el.setAttribute('data-globals',s||'');}catch(e){}})();";
+      document.documentElement.appendChild(script);
+      // The <script> executes synchronously on append; remove immediately so
+      // we don't leave it in the DOM for site code to trip over.
+      if (script.parentNode) script.parentNode.removeChild(script);
+
+      json = bridge.getAttribute("data-globals") || "";
+    } catch (_) {
+      // Strict-CSP sites (script-src 'none' / 'self' without 'unsafe-inline')
+      // block the injection. Fall through silently -- the DOM scan still ran.
+    } finally {
+      if (bridge && bridge.parentNode) bridge.parentNode.removeChild(bridge);
+    }
+
+    if (!json) return;
+
+    // Run the same regexes the DOM-text scan uses, against the JSON string.
+    const emailMatches = json.match(EMAIL_REGEX) || [];
+    emailMatches.forEach((email) => {
+      email = email.toLowerCase();
+      if (seen.has(email)) return;
+      // Filter out obvious noise that shows up in __NEXT_DATA__ blobs
+      if (
+        email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
+        email.includes("sentry") || email.includes("webpack") ||
+        email.includes("example.com") || email.includes("@2x") ||
+        email.includes("noreply") || email.includes("no-reply")
+      ) return;
+      seen.add(email);
+      const context = "from page state";
+      results.emails.push({
+        value: email,
+        context,
+        score: scoreEmail(email, context),
+        source: "globals",
+      });
+    });
+
+    const phoneMatches = [
+      ...(json.match(PHONE_REGEX) || []),
+      ...(json.match(INTL_PHONE_REGEX) || []),
+    ];
+    phoneMatches.forEach((phone) => {
+      const cleaned = phone.replace(/[^\d+]/g, "");
+      if (cleaned.length < 10 || cleaned.length > 15) return;
+      if (seen.has(cleaned)) return;
+      // JSON often has long runs of digits (IDs, timestamps) that pattern-match
+      // phone shapes by accident. Require the original substring to contain at
+      // least one non-digit separator OR a leading + to weed those out.
+      if (!/[+\-.\s()]/.test(phone)) return;
+      seen.add(cleaned);
+      const context = "from page state";
+      results.phones.push({
+        value: formatPhone(phone),
+        context,
+        score: scorePhone(context),
+        source: "globals",
+      });
+    });
   }
 
   function extractFromText(text, parentEl, results, seen) {
