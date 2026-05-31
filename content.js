@@ -1594,16 +1594,21 @@
       return;
     }
 
-    // Capture state we want to survive a re-render: panel expand and any
-    // per-row Compose/Call toggles the user has currently open.
+    // Capture state we want to survive a re-render: panel expand, any
+    // per-row Compose/Call toggles the user has currently open, and the
+    // scrollTop of the .scroll container so the auto-rescan rebuild does
+    // not bounce a mid-scroll user back to the top.
     const prior = document.getElementById(SP_HOST_ID);
     const wasExpanded = prior ? prior.classList.contains("expanded") : false;
     const wasOpenRows = new Set();
+    let priorScrollTop = 0;
     if (prior && prior.shadowRoot) {
       prior.shadowRoot.querySelectorAll(".row-toggle.open").forEach((t) => {
         const id = t.getAttribute("data-sp-toggle");
         if (id) wasOpenRows.add(id);
       });
+      const priorScroll = prior.shadowRoot.querySelector(".scroll");
+      if (priorScroll) priorScrollTop = priorScroll.scrollTop;
     }
 
     let host = prior;
@@ -1635,6 +1640,14 @@
         if (toggle) toggle.classList.add("open");
         if (panel) panel.classList.add("open");
       });
+      // Restore scroll position so an auto-rescan that fires while the
+      // user is mid-scroll doesn't snap them back to the top. Setting
+      // scrollTop after the new .scroll element is in the DOM works
+      // because the layout pass has already measured scrollHeight.
+      if (priorScrollTop > 0) {
+        const freshScroll = shadow.querySelector(".scroll");
+        if (freshScroll) freshScroll.scrollTop = priorScrollTop;
+      }
       spWireEvents(shadow, currentResults);
     }
   }
