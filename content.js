@@ -672,6 +672,230 @@
   const SP_DISMISS_PREFIX = "fmp_side_panel_dismissed_";
   const SP_DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+  // ===================================================================
+  // SIDE PANEL FEATURE PARITY WITH POPUP
+  // The following constants and helpers bring the side panel up to
+  // surface-level parity with the toolbar popup. Five capabilities the
+  // popup had that the side panel was missing -- now added:
+  //
+  //   1. "Rate Find Me People" link in the footer (browser-aware:
+  //      Firefox -> AMO, Chrome / Edge / Brave / Arc -> Web Store).
+  //   2. "Rescan" button in the footer for manual SPA-hydration cases
+  //      where the auto-rescan MutationObserver hasn't fired yet.
+  //   3. Support-pages section that renders results.links (the same
+  //      /contact, /support, /help URLs the popup shows when the visible
+  //      page lacks direct contact info).
+  //   4. Hours-of-operation banner + weekly schedule. Same Open Now /
+  //      Closed Now logic as popup.js renderHoursBanner -- parses
+  //      today's hours, compares to current local time, picks a green /
+  //      red / gray treatment, lists deduped weekly rows below.
+  //   5. "History" view tab. A second view inside the panel that shows
+  //      every previously-copied contact (across popup + side panel,
+  //      via shared chrome.storage.local fmp_history key). Searchable,
+  //      click-to-recopy, with a Clear button.
+  //
+  // The data-sp-copy-type / data-sp-copy-score attrs added to email and
+  // phone rows let copy events know what type the value is so history
+  // records can render the correct badge -- same attribute names as
+  // the popup-side feat/contact-history PR uses, so a future merge of
+  // that branch's content.js changes will resolve cleanly.
+  // ===================================================================
+
+  // Browser-aware "rate us" link target (kept in sync with popup.js)
+  function spIsFirefox() { return navigator.userAgent.includes("Firefox"); }
+  const SP_REVIEW_URLS = {
+    chrome:  "https://chromewebstore.google.com/detail/find-me-people/ngfklhkcicocfchdmepiajdmboialikf/reviews",
+    firefox: "https://addons.mozilla.org/addon/find-me-people/",
+  };
+  function spGetReviewUrl() { return spIsFirefox() ? SP_REVIEW_URLS.firefox : SP_REVIEW_URLS.chrome; }
+
+  // Contact history -- shared key with popup-side history. Both surfaces
+  // read and write to the same chrome.storage.local.fmp_history array,
+  // so anything copied from either surface shows up in both histories.
+  const SP_HISTORY_KEY = "fmp_history";
+  const SP_HISTORY_MAX = 50;
+  let spHistoryFilter = ""; // current History-view search text
+  let spActiveView = "now"; // "now" or "history"
+
+  function spGetHistoryFromStorage() {
+    return new Promise((resolve) => {
+      if (!chrome.storage || !chrome.storage.local) return resolve([]);
+      try {
+        chrome.storage.local.get([SP_HISTORY_KEY], (r) => {
+          resolve(Array.isArray(r[SP_HISTORY_KEY]) ? r[SP_HISTORY_KEY] : []);
+        });
+      } catch (_) { resolve([]); }
+    });
+  }
+  function spAddToHistory(entry) {
+    if (!entry || !entry.value) return;
+    if (!chrome.storage || !chrome.storage.local) return;
+    spGetHistoryFromStorage().then((hist) => {
+      const filtered = hist.filter((e) => e.value !== entry.value);
+      filtered.unshift({ ...entry, timestamp: Date.now() });
+      if (filtered.length > SP_HISTORY_MAX) filtered.length = SP_HISTORY_MAX;
+      try { chrome.storage.local.set({ [SP_HISTORY_KEY]: filtered }); } catch (_) {}
+    });
+  }
+  function spClearHistory() {
+    return new Promise((resolve) => {
+      if (!chrome.storage || !chrome.storage.local) return resolve();
+      try { chrome.storage.local.set({ [SP_HISTORY_KEY]: [] }, resolve); }
+      catch (_) { resolve(); }
+    });
+  }
+  function spTimeAgo(ts) {
+    const s = Math.max(1, Math.floor((Date.now() - ts) / 1000));
+    if (s < 60) return s + "s ago";
+    if (s < 3600) return Math.floor(s / 60) + "m ago";
+    if (s < 86400) return Math.floor(s / 3600) + "h ago";
+    if (s < 86400 * 7) return Math.floor(s / 86400) + "d ago";
+    return Math.floor(s / (86400 * 7)) + "w ago";
+  }
+
+  // Hours rendering -- mirrors popup.js renderHoursBanner. The day-name
+  // arrays here are constants to compare today's day against the parsed
+  // hours-of-operation entries; if a match is found we figure out
+  // open/closed by comparing current local minutes against the parsed
+  // opens / closes minute counts.
+  const SP_DAY_FULL_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const SP_DAY_SHORT_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  function spParseTimeToMinutes(t) {
+    if (!t) return null;
+    const s = String(t).trim().toLowerCase();
+    const m = s.match(/^(\d{1,2}):?(\d{2})?\s*(am|pm)?$/);
+    if (!m) return null;
+    let h = parseInt(m[1], 10);
+    const min = m[2] ? parseInt(m[2], 10) : 0;
+    const ampm = m[3];
+    if (ampm === "pm" && h < 12) h += 12;
+    if (ampm === "am" && h === 12) h = 0;
+    return h * 60 + min;
+  }
+
+  function spRenderHoursBanner(hours) {
+    if (!hours || hours.length === 0) {
+      return `
+        <div class="hours-banner unknown">
+          <div class="hb-pulse"></div>
+          <div class="hb-text">
+            <div class="hb-label">Hours not posted</div>
+            <div class="hb-detail">No business hours detected</div>
+          </div>
+        </div>`;
+    }
+    const now = new Date();
+    const todayIdx = now.getDay();
+    const todayName = SP_DAY_FULL_NAMES[todayIdx].toLowerCase();
+    const todayShort = SP_DAY_SHORT_NAMES[todayIdx].toLowerCase();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    let openNow = false;
+    let todayHours = null;
+    hours.forEach((h) => {
+      const display = (h.display || "").toLowerCase();
+      const days = (h.days || []).map((d) => String(d).toLowerCase());
+      const matchesToday =
+        display.includes(todayName) || display.includes(todayShort) ||
+        days.some((d) => d.includes(todayShort) || d.includes(todayName));
+      if (matchesToday && !todayHours) {
+        todayHours = h.display;
+        if (h.opens && h.closes) {
+          const openMin = spParseTimeToMinutes(h.opens);
+          const closeMin = spParseTimeToMinutes(h.closes);
+          if (openMin !== null && closeMin !== null) {
+            if (currentMinutes >= openMin && currentMinutes < closeMin) openNow = true;
+          }
+        }
+      }
+    });
+    if (!todayHours) todayHours = hours[0].display;
+    const bannerClass = openNow ? "open" : todayHours ? "closed" : "unknown";
+    const label = openNow ? "Open Now" : "Closed Now";
+    const detail = todayHours ? `Today: ${todayHours}` : "Hours not detected for today";
+
+    let html = `
+      <div class="hours-banner ${bannerClass}">
+        <div class="hb-pulse"></div>
+        <div class="hb-text">
+          <div class="hb-label">${label}</div>
+          <div class="hb-detail">${spEscape(detail)}</div>
+        </div>
+      </div>`;
+    if (hours.length > 1) {
+      const dseen = new Set();
+      const rows = [];
+      hours.forEach((h) => {
+        if (!dseen.has(h.display)) {
+          dseen.add(h.display);
+          const isToday =
+            (h.display || "").toLowerCase().includes(todayName) ||
+            (h.display || "").toLowerCase().includes(todayShort);
+          rows.push({ display: h.display, isToday });
+        }
+      });
+      html += '<div class="hours-list">';
+      rows.slice(0, 7).forEach((r) => {
+        const parts = r.display.split(/:\s+/);
+        const day = parts[0] || r.display;
+        const time = parts.slice(1).join(": ") || "";
+        html += `<div class="hours-row${r.isToday ? " today" : ""}">
+          <span class="hr-day">${spEscape(day)}</span>
+          <span>${spEscape(time)}</span>
+        </div>`;
+      });
+      html += "</div>";
+    }
+    return html;
+  }
+
+  function spRenderSupportLinks(links) {
+    if (!links || links.length === 0) return "";
+    let html = `<div class="section"><div class="section-title">Support Pages</div>`;
+    links.slice(0, 5).forEach((l) => {
+      let pathname = "";
+      try { pathname = new URL(l.url).pathname; } catch (_) {}
+      html += `<a class="link-item" href="${spEscape(l.url)}" target="_blank" rel="noopener noreferrer">
+        <span class="li-text">${spEscape(l.text || "Contact Page")}</span>
+        <span class="li-path">${spEscape(pathname)}</span>
+      </a>`;
+    });
+    html += "</div>";
+    return html;
+  }
+
+  function spRenderHistoryView(history, filter) {
+    const q = (filter || "").trim().toLowerCase();
+    const matched = q
+      ? history.filter((e) => (e.value + " " + (e.hostname || "")).toLowerCase().includes(q))
+      : history;
+    let html = `<input class="history-search" type="search" data-sp-history-search placeholder="Search history (${history.length})" value="${spEscape(filter || "")}" />`;
+    html += `<div class="history-list">`;
+    if (matched.length === 0) {
+      html += `<div class="history-empty">${history.length === 0 ? "Copy any contact to start your history." : "No matches."}</div>`;
+    } else {
+      matched.forEach((e) => {
+        const v = spEscape(e.value);
+        html += `
+          <div class="history-item" data-sp-copy="${v}" data-sp-copy-type="${spEscape(e.type || "")}" data-sp-copy-score="${e.score || 0}">
+            <div class="hi-row1">
+              <span class="hi-value">${v}</span>
+              <span class="hi-when">${spTimeAgo(e.timestamp)}</span>
+            </div>
+            <div class="hi-row2">
+              <span class="hi-type">${spEscape(e.type || "")}</span>
+              <span>${spEscape(e.hostname || "")}</span>
+            </div>
+          </div>`;
+      });
+    }
+    html += `</div>`;
+    if (history.length > 0) {
+      html += `<div class="history-footer"><button class="text-btn" data-sp-action="clear-history">Clear history</button></div>`;
+    }
+    return html;
+  }
+
   async function spGetMaster() {
     if (!chrome.storage || !chrome.storage.local) return true;
     return new Promise((resolve) => {
@@ -717,11 +941,17 @@
       .replace(/'/g, "&#39;");
   }
 
-  function spBuildBody(currentResults, currentClient) {
+  function spBuildBody(currentResults, currentClient, history) {
     const total = currentResults.emails.length + currentResults.phones.length;
+    const totalSuffix = total === 1 ? "" : "s";
+    const tabsHtml = `
+      <div class="view-tabs">
+        <button class="view-tab${spActiveView === "now" ? " active" : ""}" data-sp-view="now">On this page</button>
+        <button class="view-tab${spActiveView === "history" ? " active" : ""}" data-sp-view="history">History</button>
+      </div>`;
 
     let html = `
-      <div class="tab" data-sp-action="expand" role="button" aria-label="Open Find Me People panel" title="Find Me People (${total} contact${total === 1 ? "" : "s"})">
+      <div class="tab" data-sp-action="expand" role="button" aria-label="Open Find Me People panel" title="Find Me People (${total} contact${totalSuffix})">
         <span class="tab-icon">&#128100;</span>
         ${total > 0 ? `<span class="tab-count">${total}</span>` : ""}
       </div>
@@ -730,81 +960,101 @@
           <span class="title"><span class="logo">&#128100;</span> Find Me People</span>
           <button class="icon-btn" data-sp-action="collapse" aria-label="Collapse">&minus;</button>
         </div>
-        <div class="status">${total > 0 ? `Found ${total} contact${total === 1 ? "" : "s"} on this page` : "No contacts found"}</div>
-        <div class="scroll">
+        ${tabsHtml}
     `;
 
-    if (currentResults.emails.length) {
-      html += `<div class="section"><div class="section-title">Email</div>`;
-      // Section-level client picker -- one preference for every template chip below
-      html += `<div class="client-picker"><span class="picker-label">Templates open in</span>`;
-      EMAIL_CLIENTS.forEach((c) => {
-        const sel = c.id === currentClient ? " selected" : "";
-        html += `<button class="chip sm${sel}" data-sp-set-client="${c.id}">${spEscape(c.name)}</button>`;
-      });
-      html += `</div>`;
+    // ----- "History" view: searchable list of every previous copy -----
+    if (spActiveView === "history") {
+      html += `<div class="scroll history-scroll">${spRenderHistoryView(history || [], spHistoryFilter)}</div>`;
+    } else {
+      // ----- "On this page" view: hours banner + email + phone + support -----
+      html += `<div class="status">${total > 0 ? `Found ${total} contact${totalSuffix} on this page` : "No contacts found"}</div>`;
+      html += spRenderHoursBanner(currentResults.hours || []);
+      html += `<div class="scroll">`;
 
-      currentResults.emails.slice(0, 5).forEach((e, idx) => {
-        const sc = e.score >= 70 ? "high" : e.score >= 40 ? "mid" : "low";
-        const lbl = e.score >= 70 ? "Likely support" : e.score >= 40 ? "Possible" : "Low match";
-        const escVal = spEscape(e.value);
-        const rowId = `email-${idx}`;
-        const tplChips = EMAIL_TEMPLATES.map(
-          (t) => `<button class="chip" data-sp-template="${t.id}" data-sp-email="${escVal}">${spEscape(t.label)}</button>`
-        ).join("");
-        html += `
-          <div class="row">
-            <div class="row-main" data-sp-copy="${escVal}">
-              <div class="val">${escVal}</div>
-              <div class="meta">
-                <span>Click to copy</span>
-                <span class="score score-${sc}">${lbl}</span>
+      if (currentResults.emails.length) {
+        html += `<div class="section"><div class="section-title">Email</div>`;
+        // Section-level client picker -- one preference for every template chip below
+        html += `<div class="client-picker"><span class="picker-label">Templates open in</span>`;
+        EMAIL_CLIENTS.forEach((c) => {
+          const sel = c.id === currentClient ? " selected" : "";
+          html += `<button class="chip sm${sel}" data-sp-set-client="${c.id}">${spEscape(c.name)}</button>`;
+        });
+        html += `</div>`;
+
+        currentResults.emails.slice(0, 5).forEach((e, idx) => {
+          const sc = e.score >= 70 ? "high" : e.score >= 40 ? "mid" : "low";
+          const lbl = e.score >= 70 ? "Likely support" : e.score >= 40 ? "Possible" : "Low match";
+          const escVal = spEscape(e.value);
+          const rowId = `email-${idx}`;
+          const tplChips = EMAIL_TEMPLATES.map(
+            (t) => `<button class="chip" data-sp-template="${t.id}" data-sp-email="${escVal}">${spEscape(t.label)}</button>`
+          ).join("");
+          html += `
+            <div class="row">
+              <div class="row-main" data-sp-copy="${escVal}" data-sp-copy-type="email" data-sp-copy-score="${e.score}">
+                <div class="val">${escVal}</div>
+                <div class="meta">
+                  <span>Click to copy</span>
+                  <span class="score score-${sc}">${lbl}</span>
+                </div>
+              </div>
+              <button class="row-toggle" data-sp-toggle="${rowId}">Compose <span class="caret">&#9662;</span></button>
+              <div class="row-actions" data-sp-panel="${rowId}">
+                <div class="chips">${tplChips}</div>
               </div>
             </div>
-            <button class="row-toggle" data-sp-toggle="${rowId}">Compose <span class="caret">&#9662;</span></button>
-            <div class="row-actions" data-sp-panel="${rowId}">
-              <div class="chips">${tplChips}</div>
-            </div>
-          </div>
-        `;
-      });
-      html += `</div>`;
-    }
+          `;
+        });
+        html += `</div>`;
+      }
 
-    if (currentResults.phones.length) {
-      html += `<div class="section"><div class="section-title">Phone</div>`;
-      currentResults.phones.slice(0, 5).forEach((p, idx) => {
-        const sc = p.score >= 70 ? "high" : p.score >= 40 ? "mid" : "low";
-        const lbl = p.score >= 70 ? "Likely support" : p.score >= 40 ? "Possible" : "Low match";
-        const escVal = spEscape(p.value);
-        const escE164 = spEscape(toE164(p.value));
-        const rowId = `phone-${idx}`;
-        const voipChips = VOIP_SERVICES.map(
-          (s) => `<button class="chip" data-sp-voip="${s.id}" data-sp-phone="${escE164}">${spEscape(s.name)}</button>`
-        ).join("");
-        html += `
-          <div class="row">
-            <div class="row-main" data-sp-copy="${escVal}">
-              <div class="val">${escVal}</div>
-              <div class="meta">
-                <span>Click to copy</span>
-                <span class="score score-${sc}">${lbl}</span>
+      if (currentResults.phones.length) {
+        html += `<div class="section"><div class="section-title">Phone</div>`;
+        currentResults.phones.slice(0, 5).forEach((p, idx) => {
+          const sc = p.score >= 70 ? "high" : p.score >= 40 ? "mid" : "low";
+          const lbl = p.score >= 70 ? "Likely support" : p.score >= 40 ? "Possible" : "Low match";
+          const escVal = spEscape(p.value);
+          const escE164 = spEscape(toE164(p.value));
+          const rowId = `phone-${idx}`;
+          const voipChips = VOIP_SERVICES.map(
+            (s) => `<button class="chip" data-sp-voip="${s.id}" data-sp-phone="${escE164}">${spEscape(s.name)}</button>`
+          ).join("");
+          html += `
+            <div class="row">
+              <div class="row-main" data-sp-copy="${escVal}" data-sp-copy-type="phone" data-sp-copy-score="${p.score}">
+                <div class="val">${escVal}</div>
+                <div class="meta">
+                  <span>Click to copy</span>
+                  <span class="score score-${sc}">${lbl}</span>
+                </div>
+              </div>
+              <button class="row-toggle" data-sp-toggle="${rowId}">Call <span class="caret">&#9662;</span></button>
+              <div class="row-actions" data-sp-panel="${rowId}">
+                <div class="chips">${voipChips}</div>
               </div>
             </div>
-            <button class="row-toggle" data-sp-toggle="${rowId}">Call <span class="caret">&#9662;</span></button>
-            <div class="row-actions" data-sp-panel="${rowId}">
-              <div class="chips">${voipChips}</div>
-            </div>
-          </div>
-        `;
-      });
-      html += `</div>`;
+          `;
+        });
+        html += `</div>`;
+      }
+
+      // Support pages section -- same data the popup shows, same render
+      // logic so when scan returns 0 emails/phones but does find /contact
+      // or /support links, the user still has a discoverable next step.
+      html += spRenderSupportLinks(currentResults.links || []);
+
+      html += `</div>`; // end .scroll
     }
 
+    // ----- Shared footer (both views): Rescan / Hide / Rate -----
     html += `
-        </div>
         <div class="footer">
+          <button class="text-btn" data-sp-action="rescan" title="Re-run the scan now">&#8635; Rescan</button>
+          <span class="footer-sep">&middot;</span>
           <button class="text-btn" data-sp-action="dismiss-site">Hide on this site</button>
+          <span class="footer-sep">&middot;</span>
+          <a class="text-btn rate" href="${spGetReviewUrl()}" target="_blank" rel="noopener" data-sp-action="rate" title="Rate Find Me People"><span class="star">&#9733;</span> Rate</a>
         </div>
       </div>
       <div class="copied-toast">Copied</div>
@@ -1056,6 +1306,116 @@
       pointer-events: none;
     }
     .copied-toast.show { opacity: 1; }
+
+    /* ----- View tabs ("On this page" / "History") ----- */
+    .view-tabs {
+      display: flex;
+      border-bottom: 1px solid #1e1e1e;
+      padding: 0 14px;
+      flex-shrink: 0;
+    }
+    .view-tab {
+      background: none; border: none; color: #71717a;
+      font-size: 11px; font-weight: 600; padding: 8px 10px;
+      cursor: pointer; font-family: inherit;
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .view-tab:hover { color: #fafafa; }
+    .view-tab.active { color: #4ade80; border-bottom-color: #4ade80; }
+
+    /* ----- Hours banner + weekly list ----- */
+    .hours-banner {
+      margin: 8px 14px 6px; padding: 9px 12px;
+      background: linear-gradient(135deg, rgba(74,222,128,0.08), rgba(74,222,128,0.02));
+      border: 1px solid rgba(74,222,128,0.2); border-radius: 8px;
+      display: flex; align-items: center; gap: 9px;
+      flex-shrink: 0;
+    }
+    .hours-banner.closed {
+      background: linear-gradient(135deg, rgba(248,113,113,0.08), rgba(248,113,113,0.02));
+      border-color: rgba(248,113,113,0.2);
+    }
+    .hours-banner.unknown {
+      background: rgba(161,161,170,0.06);
+      border-color: rgba(161,161,170,0.2);
+    }
+    .hb-pulse {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+      background: #4ade80; box-shadow: 0 0 0 0 rgba(74,222,128,0.7);
+      animation: hb-pulse 2s infinite;
+    }
+    .hours-banner.closed .hb-pulse { background: #f87171; box-shadow: 0 0 0 0 rgba(248,113,113,0.7); }
+    .hours-banner.unknown .hb-pulse { background: #71717a; animation: none; box-shadow: none; }
+    @keyframes hb-pulse {
+      0%   { box-shadow: 0 0 0 0 rgba(74,222,128,0.5); }
+      70%  { box-shadow: 0 0 0 6px rgba(74,222,128,0); }
+      100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+    }
+    .hb-text { flex: 1; min-width: 0; }
+    .hb-label { font-size: 12px; font-weight: 700; color: #fafafa; line-height: 1.2; }
+    .hours-banner.closed .hb-label { color: #fca5a5; }
+    .hours-banner.open   .hb-label { color: #86efac; }
+    .hb-detail { font-size: 10.5px; color: #71717a; margin-top: 2px; }
+    .hours-list {
+      margin: 4px 14px 6px; padding: 8px 10px;
+      background: #111113; border: 1px solid #1e1e1e; border-radius: 6px;
+      flex-shrink: 0;
+    }
+    .hours-row {
+      display: flex; justify-content: space-between;
+      font-size: 11px; padding: 2px 0; color: #a1a1aa;
+    }
+    .hours-row.today { color: #fafafa; font-weight: 600; }
+    .hours-row .hr-day { text-transform: capitalize; }
+
+    /* ----- Support pages section (anchor list) ----- */
+    .link-item {
+      display: block; padding: 7px 10px; margin-bottom: 4px;
+      background: #111113; border: 1px solid #1e1e1e; border-radius: 6px;
+      text-decoration: none; color: #4ade80; font-size: 12px;
+      transition: border-color 0.15s;
+    }
+    .link-item:hover { border-color: #4ade80; }
+    .link-item .li-text { font-weight: 600; }
+    .link-item .li-path {
+      display: block; font-size: 10px; color: #52525b; margin-top: 2px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* ----- History view ----- */
+    .history-scroll { padding: 0 0 4px; }
+    .history-search {
+      margin: 8px 14px 6px; padding: 6px 9px;
+      background: #18181b; border: 1px solid #27272a; border-radius: 6px;
+      color: #fafafa; font-size: 11px; font-family: inherit;
+      width: calc(100% - 28px); outline: none;
+    }
+    .history-search:focus { border-color: #4ade80; }
+    .history-list { padding: 0 14px 4px; }
+    .history-item {
+      background: #111113; border: 1px solid #1e1e1e; border-radius: 6px;
+      padding: 6px 9px; margin-bottom: 4px; cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .history-item:hover { border-color: #4ade80; }
+    .hi-row1 { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+    .hi-value { font-size: 12px; font-weight: 600; color: #fafafa; word-break: break-all; }
+    .hi-when { font-size: 9px; color: #71717a; white-space: nowrap; flex-shrink: 0; }
+    .hi-row2 { font-size: 9.5px; color: #52525b; margin-top: 2px; display: flex; gap: 6px; }
+    .hi-type {
+      font-size: 8.5px; font-weight: 700; padding: 1px 5px; border-radius: 5px;
+      background: #18181b; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .history-empty { padding: 28px 14px; text-align: center; color: #52525b; font-size: 12px; }
+    .history-footer {
+      padding: 6px 14px 10px; text-align: center;
+      border-top: 1px solid #1e1e1e; flex-shrink: 0;
+    }
+
+    /* ----- Footer Rate link styling ----- */
+    .text-btn.rate { display: inline-flex; align-items: center; gap: 3px; }
+    .text-btn.rate .star { color: #fbbf24; }
   `;
 
   function spWireEvents(shadow, currentResults) {
@@ -1080,16 +1440,83 @@
       el.addEventListener("click", () => {
         const value = el.getAttribute("data-sp-copy");
         if (!value) return;
-        try {
-          navigator.clipboard.writeText(value);
-        } catch (_) {}
+        try { navigator.clipboard.writeText(value); } catch (_) {}
         const toast = shadow.querySelector(".copied-toast");
         if (toast) {
           toast.classList.add("show");
           setTimeout(() => toast.classList.remove("show"), 1200);
         }
+        // Record into shared history (chrome.storage.local.fmp_history)
+        // so the History tab picks it up. Same key + entry shape the
+        // popup-side history uses.
+        const type = el.getAttribute("data-sp-copy-type");
+        const score = parseInt(el.getAttribute("data-sp-copy-score") || "0", 10) || 0;
+        if (type === "email" || type === "phone") {
+          const hostname = window.location.hostname.replace(/^www\./, "");
+          spAddToHistory({ value, type, hostname, score });
+        }
       });
     });
+
+    // View tabs: switch between "On this page" and "History"
+    shadow.querySelectorAll("[data-sp-view]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const v = btn.getAttribute("data-sp-view");
+        if (v !== spActiveView) {
+          spActiveView = v;
+          if (v === "now") spHistoryFilter = ""; // reset search when leaving history
+          ensureSidePanel(results);
+        }
+      });
+    });
+
+    // Rescan: re-run scanPage() in place and re-render. The auto-rescan
+    // MutationObserver covers most DOM-mutation cases; this button is
+    // for the popup-parity manual override that some users will reach
+    // for first when results look stale.
+    shadow.querySelectorAll('[data-sp-action="rescan"]').forEach((el) => {
+      el.addEventListener("click", () => {
+        const fresh = scanPage();
+        results.emails = fresh.emails;
+        results.phones = fresh.phones;
+        results.links = fresh.links;
+        results.context = fresh.context;
+        results.hours = fresh.hours;
+        const total = results.emails.length + results.phones.length;
+        try {
+          chrome.runtime.sendMessage({ action: "updateBadge", count: total }).catch(() => {});
+        } catch (_) {}
+        ensureSidePanel(results);
+      });
+    });
+
+    // History view: search input -> debounced re-render with filter applied
+    shadow.querySelectorAll("[data-sp-history-search]").forEach((input) => {
+      input.addEventListener("input", () => {
+        spHistoryFilter = input.value || "";
+        ensureSidePanel(results);
+        // Restore focus + caret position after the re-render swaps the input
+        const fresh = shadow.querySelector("[data-sp-history-search]");
+        if (fresh) {
+          fresh.focus();
+          const v = fresh.value; fresh.value = ""; fresh.value = v;
+        }
+      });
+    });
+
+    // History view: clear-all button -> confirm + wipe + re-render
+    shadow.querySelectorAll('[data-sp-action="clear-history"]').forEach((el) => {
+      el.addEventListener("click", async () => {
+        if (!confirm("Clear all history entries?")) return;
+        await spClearHistory();
+        spHistoryFilter = "";
+        ensureSidePanel(results);
+      });
+    });
+
+    // Rate link is an <a> with target="_blank"; let the browser handle
+    // it. The data-sp-action attribute is only here for symmetry; no
+    // explicit handler needed.
 
     // Per-row Compose/Call expand/collapse
     shadow.querySelectorAll("[data-sp-toggle]").forEach((btn) => {
@@ -1154,10 +1581,11 @@
       return;
     }
 
-    const [masterOn, dismissed, currentClient] = await Promise.all([
+    const [masterOn, dismissed, currentClient, history] = await Promise.all([
       spGetMaster(),
       spIsDismissedForDomain(),
       spGetClient(),
+      spGetHistoryFromStorage(),
     ]);
 
     if (!masterOn || dismissed) {
@@ -1187,7 +1615,7 @@
       style.textContent = SP_CSS;
       shadow.appendChild(style);
       const container = document.createElement("div");
-      container.innerHTML = spBuildBody(currentResults, currentClient);
+      container.innerHTML = spBuildBody(currentResults, currentClient, history);
       while (container.firstChild) shadow.appendChild(container.firstChild);
       document.documentElement.appendChild(host);
       spWireEvents(shadow, currentResults);
@@ -1197,7 +1625,7 @@
       while (shadow.firstChild) shadow.removeChild(shadow.firstChild);
       if (style) shadow.appendChild(style);
       const container = document.createElement("div");
-      container.innerHTML = spBuildBody(currentResults, currentClient);
+      container.innerHTML = spBuildBody(currentResults, currentClient, history);
       while (container.firstChild) shadow.appendChild(container.firstChild);
       if (wasExpanded) host.classList.add("expanded");
       // Restore previously-open Compose/Call panels
@@ -1216,7 +1644,7 @@
   // panel -- both reads happen at ensureSidePanel rebuild time.
   if (chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === "local" && (SP_MASTER_KEY in changes || SP_CLIENT_KEY in changes)) {
+      if (area === "local" && (SP_MASTER_KEY in changes || SP_CLIENT_KEY in changes || SP_HISTORY_KEY in changes)) {
         ensureSidePanel(results);
       }
     });
