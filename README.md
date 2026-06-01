@@ -47,6 +47,13 @@ The result: reaching a real human for help has become a skill, not a right.
 
 ## Changelog
 
+### 1.5.2 -- 2026-06-01
+
+Scan-quality patch driven by two bugs an early Product Hunt user reported using https://www.thesanctuarygym.com/ as a control page. No new features; the side panel just produces cleaner results on sites that mix formatting variants or stack contact info across adjacent DOM blocks.
+
+- **Phone deduplication: canonical key strips US country code.** Sites that emit both `tel:1(NNN)NNN-NNNN` (with leading `1`) and a visible `(NNN) NNN-NNNN` rendering were producing two phone entries for the same number. The `tel:` handler was storing the raw href string in the dedup set while the text scanner stored digits-only -- two different keys for the same number. A new `phoneKey()` helper normalizes to digits and drops the leading US `1`, so all three phone-push sites collapse the variants to one entry. Non-US numbers are unaffected: the strip-leading-1 rule only fires on 11-digit inputs, so `+44...` and other international country codes stay intact.
+- **Email scan: stop cross-element DOM bleed.** On pages where a zip code or postal code sat in the block immediately preceding an email (`<span>...TX 77546</span><br></p></div><div>...email...</div>`), `el.textContent` was concatenating without whitespace and the regex was matching `77546email@host` as one address. Two-layer fix: contact-section scanning now uses `el.innerText` (which respects block boundaries) instead of `el.textContent`, and a `trimDigitPrefixBleed()` defense strips leading 5+ digit runs before a letter as backup for the residual inline-adjacent case. Conservative threshold leaves legitimate digit-prefixed locals like `123support@` untouched.
+
 ### 1.5.1 -- 2026-05-30
 
 Side panel feature parity + a scroll-position bug fix. The pull-tab panel now offers the same surface the toolbar popup does, and stays put while you scroll it.
