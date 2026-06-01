@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Find Me People",
   "version": "1.5.2",
-  "description": "Instantly find customer service emails, phone numbers & more on any website. Companies are making it harder -- we make it easier",
+  "description": "Bypass chatbots. Reads the chatbot's own knowledge base to surface real customer service contacts. 100% local, no account.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["<all_urls>"],
   "browser_specific_settings": {
