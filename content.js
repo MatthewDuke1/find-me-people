@@ -194,6 +194,13 @@
     // interacting with the chat UI.
     scanChatbotVendors(results, seen);
 
+    // 4f. App Store / Play Store developer contacts. When the user lands
+    // on an app listing, the store page exposes the developer's contact
+    // email and website. That's the canonical contact for the company
+    // behind the app -- often the only contact info they publish, since
+    // many companies route everything through their app's support form.
+    scanAppStorePages(results, seen);
+
     // 5. Scan for hours of operation
     extractHours(results, hoursSeen);
 
@@ -663,6 +670,126 @@
         });
       }
     });
+  }
+
+  // Detect Apple App Store / Google Play app-listing pages and pull the
+  // developer contact info both stores expose by policy.
+  //
+  // Apple App Store (apps.apple.com):
+  //   - "Developer Website" -> external link in the "Information" section
+  //   - "App Support" -> external link (often goes to support page)
+  //   - The page itself shows a developer name; their site (if extracted)
+  //     becomes a known contact-page candidate even though we don't
+  //     fetch it here.
+  //
+  // Google Play (play.google.com):
+  //   - Developer contact section exposes email and website explicitly.
+  //   - Schema.org markup: <meta itemprop="email"> on the developer
+  //     entity gives us the email directly.
+  //   - Privacy policy / terms / support URLs all appear as labeled links.
+  //
+  // We surface emails, phones, and support-page URLs found here. Score
+  // is high (90 for emails, 95 for phones) because store policies
+  // require developers to provide working contact info.
+  function scanAppStorePages(results, seen) {
+    const host = (window.location.hostname || "").toLowerCase();
+    const isApple = host === "apps.apple.com" || host.endsWith(".apps.apple.com");
+    const isPlay  = host === "play.google.com" || host.endsWith(".play.google.com");
+    if (!isApple && !isPlay) return;
+
+    const platform = isApple ? "apple" : "play";
+
+    // ---- emails ----
+    // Both stores expose at least one mailto: link in their developer
+    // info section. Catch those plus schema.org email properties.
+    try {
+      document.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
+        const raw = (el.getAttribute("href") || "").replace("mailto:", "").split("?")[0].trim().toLowerCase();
+        if (!raw || !raw.includes("@")) return;
+        const email = trimDigitPrefixBleed(raw);
+        if (seen.has(email)) return;
+        seen.add(email);
+        const ctx = `${platform === "apple" ? "Apple App Store" : "Google Play"} developer contact`;
+        results.emails.push({
+          value: email,
+          context: ctx,
+          score: 90,
+          source: `appstore:${platform}`,
+        });
+      });
+    } catch (_) {}
+
+    // Schema.org developer email -- Google Play uses these on its app pages.
+    try {
+      document.querySelectorAll('[itemprop="email"]').forEach((el) => {
+        const raw = ((el.getAttribute("content") || el.textContent || "")).trim().toLowerCase();
+        if (!raw || !raw.includes("@")) return;
+        const m = raw.match(EMAIL_REGEX);
+        if (!m) return;
+        const email = trimDigitPrefixBleed(m[0]);
+        if (seen.has(email)) return;
+        seen.add(email);
+        const ctx = `${platform === "apple" ? "Apple App Store" : "Google Play"} developer contact`;
+        results.emails.push({
+          value: email,
+          context: ctx,
+          score: 90,
+          source: `appstore:${platform}`,
+        });
+      });
+    } catch (_) {}
+
+    // ---- phones ----
+    try {
+      document.querySelectorAll('a[href^="tel:"]').forEach((el) => {
+        const phone = (el.getAttribute("href") || "").replace("tel:", "").replace(/\s/g, "");
+        if (!phone || phone.length < 10) return;
+        const key = phoneKey(phone);
+        if (seen.has(key)) return;
+        seen.add(key);
+        const ctx = `${platform === "apple" ? "Apple App Store" : "Google Play"} developer contact`;
+        results.phones.push({
+          value: formatPhone(phone),
+          context: ctx,
+          score: 95,
+          source: `appstore:${platform}`,
+        });
+      });
+    } catch (_) {}
+
+    // ---- developer website + support links ----
+    // Promote labeled "Developer Website" / "App Support" / "Privacy
+    // Policy" links into results.links so the side panel's support
+    // section surfaces them as next-step destinations the user can
+    // click into.
+    const supportLabels = [
+      "developer website", "developer page", "developer info",
+      "app support", "support", "support page",
+      "privacy policy", "privacy", "terms",
+      "website", "contact us", "contact",
+    ];
+    try {
+      document.querySelectorAll("a[href]").forEach((a) => {
+        const text = (a.textContent || "").trim().toLowerCase();
+        if (!text) return;
+        if (!supportLabels.some((lbl) => text.includes(lbl))) return;
+        const href = a.href || "";
+        if (!href.startsWith("http")) return;
+        // Reject the store's own internal nav links -- only surface
+        // external developer-owned destinations.
+        try {
+          const u = new URL(href);
+          if (u.hostname === host) return;
+        } catch (_) { return; }
+        if (seen.has(href)) return;
+        seen.add(href);
+        results.links.push({
+          url: href,
+          text: a.textContent.trim().substring(0, 60),
+          source: `appstore:${platform}`,
+        });
+      });
+    } catch (_) {}
   }
 
   // Walk every iframe on the page; for any that is same-origin (i.e. we can
