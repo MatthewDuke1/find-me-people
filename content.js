@@ -665,6 +665,109 @@
     });
   }
 
+  // Footer-specialized contact extraction. Three things this pass adds
+  // beyond the generic CONTACT_SELECTORS body-text scan:
+  //
+  //   1. Wider footer detection. Cascades through <footer>,
+  //      [role="contentinfo"], [class*="footer"], [id*="footer"] --
+  //      catching cases the generic [class*="footer"] selector
+  //      already does, plus the semantic HTML5 <footer> and the
+  //      ARIA contentinfo landmark.
+  //
+  //   2. Labeled-field extraction. Looks for "Email:", "Tel:",
+  //      "Phone:", "Fax:", "Toll Free:", "Sales:", "Support:" and
+  //      similar label-prefixed values. The label becomes part of
+  //      the context string so the side panel can show "(Toll Free)"
+  //      or "(Sales)" next to the number.
+  //
+  //   3. Score boost. Anything found inside a footer gets +10 over
+  //      the standard scorePhone / scoreEmail output. Footer contacts
+  //      are conventionally the canonical contact surface for a
+  //      business, not casually-mentioned numbers in body prose.
+  function scanFooterSpecialized(results, seen) {
+    const FOOTER_SELECTORS = [
+      "footer", '[role="contentinfo"]',
+      '[class*="footer" i]', '[id*="footer" i]',
+      '[class*="site-info" i]', '[class*="copyright" i]',
+    ];
+    const footers = new Set();
+    FOOTER_SELECTORS.forEach((sel) => {
+      try {
+        document.querySelectorAll(sel).forEach((el) => footers.add(el));
+      } catch (_) {}
+    });
+    if (!footers.size) return;
+
+    // Match label + value pairs. Captured label normalises to the
+    // intent type ("toll free", "fax", "support", etc.). Captured value
+    // is the email or phone literal.
+    //
+    // Pattern: <label>: <whitespace>* <value>
+    // - Label: one of the recognized prefixes
+    // - Separator: ":" or "-" or "—" or " is "
+    // - Value: rest of line up to a newline or end-of-string-window
+    const LABEL_PATTERN = /\b(toll[\s-]?free|toll[\s-]?free\s+phone|fax|tel|telephone|phone|email|e-mail|mailto|sales|support|customer\s+service|customer\s+care|main\s+(?:line|office|number)|reservations?|emergency|after\s+hours|press|media|info)\s*[:\-–—]\s*([^\n\r]{1,80})/gi;
+
+    // Also try direct email/phone matches even without labels -- but
+    // ONLY if the footer text mentions a contact keyword somewhere
+    // (very weak proximity gate so we don't grab nav copyright phones).
+
+    footers.forEach((el) => {
+      let text;
+      try {
+        text = el.innerText || el.textContent || "";
+      } catch (_) { return; }
+      if (!text) return;
+
+      // Pass A: labeled fields
+      let m;
+      LABEL_PATTERN.lastIndex = 0;
+      while ((m = LABEL_PATTERN.exec(text)) !== null) {
+        const label = (m[1] || "").trim().toLowerCase().replace(/\s+/g, " ");
+        const value = (m[2] || "").trim();
+        if (!value) continue;
+
+        // Email-shaped value
+        const emailMatch = value.match(EMAIL_REGEX);
+        if (emailMatch) {
+          const email = trimDigitPrefixBleed(emailMatch[0].toLowerCase());
+          if (!seen.has(email) && !email.includes("example.com") && !email.includes("noreply") && !email.includes("no-reply")) {
+            seen.add(email);
+            const ctx = `footer (${label})`;
+            results.emails.push({
+              value: email,
+              context: ctx,
+              score: Math.min(100, scoreEmail(email, ctx) + 10),
+              source: "footer",
+            });
+          }
+          continue;
+        }
+
+        // Phone-shaped value
+        const phoneMatch =
+          value.match(PHONE_REGEX) ||
+          value.match(INTL_PHONE_REGEX);
+        if (phoneMatch) {
+          const phone = phoneMatch[0];
+          const cleaned = phone.replace(/[^\d+]/g, "");
+          if (cleaned.length < 10 || cleaned.length > 15) continue;
+          if (!/[+\-.\s()]/.test(phone)) continue;
+          const key = phoneKey(cleaned);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const ctx = `footer (${label})`;
+          results.phones.push({
+            value: formatPhone(phone),
+            context: ctx,
+            score: Math.min(100, scorePhone(ctx) + 10),
+            source: "footer",
+          });
+        }
+      }
+    });
+  }
+
   // Walk every iframe on the page; for any that is same-origin (i.e. we can
   // access contentDocument without SecurityError), recurse the scanner's
   // text-extraction step into its body. Bounded to one level of recursion
