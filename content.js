@@ -35,9 +35,25 @@
     '[aria-label*="contact"]', '[aria-label*="support"]',
   ];
 
-  // Pages likely to have contact info
+  // URL patterns that indicate a page is likely to carry contact info.
+  // Boundary-aware: matches "contact" / "contacts" only when adjacent to
+  // a path separator (-, _, /, or end-of-string). The previous /\/contact/i
+  // pattern required a literal "/contact" prefix and missed real contact
+  // pages like /media-contacts and /direct-contact-information that show
+  // up on government and large-org sites (dhs.gov, irs.gov, etc.).
+  //
+  // Examples that match:
+  //   /contact, /contact-us, /contacts, /contacts/, /contact_us
+  //   /media-contacts, /press-contacts, /staff-contacts
+  //   /direct-contact-information, /general-contact-info
+  //   /press, /press-room (often carries media-facing contacts)
+  //
+  // Examples that do NOT match (avoid false positives):
+  //   /contactless-payment, /non-contactable-resources
   const CONTACT_PAGE_PATTERNS = [
-    /\/contact/i, /\/support/i, /\/help/i, /\/about/i,
+    /[-_\/]contacts?(?:[-_\/]|$)/i,
+    /[-_\/]press(?:[-_\/]|$)/i,
+    /\/support/i, /\/help/i, /\/about/i,
     /\/customer-service/i, /\/get-in-touch/i, /\/reach-us/i,
   ];
 
@@ -194,10 +210,33 @@
       return true;
     });
 
-    // 6. Fallback: if the in-DOM scan came up totally empty, fire a
-    // fire-and-forget background fetch of common same-origin contact
-    // pages (/contact, /about, /support) and merge any matches into
-    // results in place. Bounded to once per origin per session.
+    // 6. Background-fetch every same-origin contact-page link we found in
+    // step 4. Government and large-org sites surface multiple specialized
+    // contact pages (dhs.gov has /contact AND /media-contacts AND
+    // /direct-contact-information, each with its own contact info). The
+    // user shouldn't have to click each one -- we fetch all of them,
+    // parse, and merge. Bounded to 5 fetches per scan, per-URL
+    // sessionStorage gate, same-origin only, credentials: 'omit'.
+    const discoveredContactUrls = (results.links || [])
+      .map((l) => l && l.url)
+      .filter((u) => {
+        if (!u || typeof u !== "string") return false;
+        try {
+          const parsed = new URL(u);
+          return parsed.origin === window.location.origin
+              && CONTACT_PAGE_PATTERNS.some((p) => p.test(parsed.pathname));
+        } catch (_) {
+          return false;
+        }
+      });
+    if (discoveredContactUrls.length) {
+      fetchDiscoveredContactPages(discoveredContactUrls, results, seen);
+    }
+
+    // 7. Fallback: if the in-DOM scan AND the discovered-page fetch came
+    // up totally empty, fire a fire-and-forget background fetch of a
+    // hardcoded list of common contact paths (/contact, /about, /support)
+    // and merge any matches. Bounded to once per origin per session.
     if (results.emails.length + results.phones.length === 0) {
       fetchAndScanFallbackPages(results, seen);
     }
@@ -713,6 +752,130 @@
   // Dedup keys (phoneKey, trimDigitPrefixBleed) are the same helpers the
   // synchronous scan paths use, so a number/email surfaced first by the
   // DOM scan and again by the fallback fetch collapses to one entry.
+  // Background-fetch a list of discovered same-origin contact-page URLs
+  // (collected during the main scan via CONTACT_PAGE_PATTERNS) and merge
+  // any emails / phones found into results. Distinct from
+  // fetchAndScanFallbackPages:
+  //
+  //   - That function fires only when the in-page scan returned zero
+  //     contacts, tries a hardcoded list of common paths, and stops at
+  //     the first hit.
+  //
+  //   - This function fires when the in-page scan DID find contact-page
+  //     links, fetches each (up to a 5-URL budget), and merges every
+  //     hit. This is what surfaces /media-contacts AND
+  //     /direct-contact-information on dhs.gov instead of only the first.
+  //
+  // Bounding:
+  //   - Max 5 fetches per scan
+  //   - Same-origin only; cross-origin redirects discarded
+  //   - Per-URL sessionStorage gate ("__fmp_fetched_<url>") so re-scans
+  //     and page navigations don't re-fetch
+  //   - 1 MB body cap per response
+  //   - credentials: 'omit'
+  //
+  // Found contacts use the canonical phoneKey / trimDigitPrefixBleed
+  // helpers, so duplicates against the in-page scan collapse to one entry.
+  async function fetchDiscoveredContactPages(urls, results, seen) {
+    if (!Array.isArray(urls) || !urls.length) return;
+    if (!/^https?:/.test(window.location.protocol)) return;
+    const origin = window.location.origin;
+
+    // Filter to same-origin URLs that haven't been fetched this session
+    // and reserve their sessionStorage flags up-front (race-tolerant).
+    const targets = [];
+    const seenInBatch = new Set();
+    for (const url of urls) {
+      if (targets.length >= 5) break;
+      if (seenInBatch.has(url)) continue;
+      seenInBatch.add(url);
+      try {
+        if (new URL(url).origin !== origin) continue;
+      } catch (_) { continue; }
+      const cacheKey = "__fmp_fetched_" + url;
+      try {
+        if (sessionStorage.getItem(cacheKey)) continue;
+        sessionStorage.setItem(cacheKey, "1");
+      } catch (_) { continue; }
+      targets.push(url);
+    }
+    if (!targets.length) return;
+
+    let added = 0;
+    for (const url of targets) {
+      try {
+        const resp = await fetch(url, {
+          credentials: "omit",
+          redirect: "follow",
+          cache: "no-cache",
+        });
+        if (!resp.ok) continue;
+        try {
+          if (new URL(resp.url).origin !== origin) continue;
+        } catch (_) { continue; }
+
+        const text = await resp.text();
+        if (!text || text.length > 1024 * 1024) continue;
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, "text/html");
+        if (!doc || !doc.body) continue;
+
+        const ctx = "from " + (new URL(url).pathname || url);
+
+        // mailto: / tel: anchors -- highest confidence on a contact page.
+        doc.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
+          const raw = (el.getAttribute("href") || "").replace("mailto:", "").split("?")[0].toLowerCase();
+          if (!raw || !raw.includes("@")) return;
+          const email = trimDigitPrefixBleed(raw);
+          if (seen.has(email)) return;
+          seen.add(email);
+          results.emails.push({
+            value: email,
+            context: ctx,
+            score: Math.min(100, scoreEmail(email, ctx) + 10),
+            source: "discovered-page",
+          });
+          added++;
+        });
+        doc.querySelectorAll('a[href^="tel:"]').forEach((el) => {
+          const phone = (el.getAttribute("href") || "").replace("tel:", "").replace(/\s/g, "");
+          if (!phone || phone.length < 10) return;
+          const key = phoneKey(phone);
+          if (seen.has(key)) return;
+          seen.add(key);
+          results.phones.push({
+            value: formatPhone(phone),
+            context: ctx,
+            score: 95,
+            source: "discovered-page",
+          });
+          added++;
+        });
+
+        // Body text -- with proximity-anchor required for phones, same
+        // bar as the live-page loose-body scan.
+        const body = (doc.body && doc.body.innerText) || "";
+        if (body) {
+          const before = results.emails.length + results.phones.length;
+          extractFromText(body, doc.body, results, seen, { requireProximityAnchor: true });
+          added += (results.emails.length + results.phones.length) - before;
+        }
+      } catch (_) {
+        // Network error, parse error, CORS block -- silent skip.
+      }
+    }
+
+    if (added > 0) {
+      results.emails.sort((a, b) => b.score - a.score);
+      results.phones.sort((a, b) => b.score - a.score);
+      const total = results.emails.length + results.phones.length;
+      try {
+        chrome.runtime.sendMessage({ action: "updateBadge", count: total }).catch(() => {});
+      } catch (_) {}
+    }
+  }
+
   async function fetchAndScanFallbackPages(results, seen) {
     if (results.emails.length + results.phones.length > 0) return;
     const origin = window.location.origin;
