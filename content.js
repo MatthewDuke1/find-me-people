@@ -126,9 +126,14 @@
       } catch (e) {}
     });
 
-    // 3. Scan the full page body for remaining matches
+    // 3. Scan the full page body for remaining matches. Loose-body scope:
+    // require a per-phone contact-proximity anchor so we don't dump every
+    // snippet phone on a Google search results page (or any directory /
+    // listing / social feed) into the side panel. Emails are unaffected --
+    // their @ symbol makes them distinct enough that the noise pattern
+    // doesn't appear in practice.
     const bodyText = document.body ? document.body.innerText : "";
-    extractFromText(bodyText, document.body, results, seen);
+    extractFromText(bodyText, document.body, results, seen, { requireProximityAnchor: true });
 
     // 3b. Scan same-origin iframes. Sites that embed contact widgets,
     // support chat panels, or "contact us" forms via iframe on their own
@@ -680,7 +685,7 @@
 
         const text = (doc.body && doc.body.innerText) || "";
         if (text) {
-          extractFromText(text, doc.body, results, seen);
+          extractFromText(text, doc.body, results, seen, { requireProximityAnchor: true });
         }
       } catch (_) {
         // SecurityError mid-walk (happens when an iframe re-navigates to a
@@ -784,9 +789,13 @@
           });
         });
 
-        // Body-text scan over the fetched page
+        // Body-text scan over the fetched page. Loose-body scope on a
+        // fetched /contact or /about response: keep the proximity anchor
+        // requirement on so we don't pull a press-release date or a board
+        // member's personal cell out as a "found contact." mailto: / tel:
+        // anchors above already covered the high-confidence cases.
         const body = (doc.body && doc.body.innerText) || "";
-        if (body) extractFromText(body, doc.body, results, seen);
+        if (body) extractFromText(body, doc.body, results, seen, { requireProximityAnchor: true });
 
         // Re-sort after merging fresh results
         results.emails.sort((a, b) => b.score - a.score);
@@ -821,7 +830,56 @@
     return email.replace(/^\d{5,}(?=[a-z])/, "");
   }
 
-  function extractFromText(text, parentEl, results, seen) {
+  // Anchor keywords that signal a phone number is a real contact number
+  // rather than a stray digit run. We require at least one of these in the
+  // +/-100 character window around a phone match when scanning loose body
+  // text (Google search results pages, business directories, social feeds,
+  // anywhere a phone might appear without contact context). Without this,
+  // every snippet phone on a Google search page lands in results because
+  // the page-level scorePhone() check sees plenty of words page-wide but
+  // tells us nothing about the phone's actual surroundings.
+  //
+  // Each entry below is a lowercase substring that, if present in the
+  // surrounding text, is enough to anchor the phone.
+  const PHONE_PROXIMITY_ANCHORS = [
+    "contact", "support", "customer service", "customer care",
+    "help line", "help desk", "service desk", "care team",
+    "call us", "call:", "call our", "phone:", "phone us",
+    "tel:", "tel.", "telephone:", "ph:", "ph.", "ph ",
+    "reach us", "reach out", "talk to", "speak to", "speak with",
+    "toll free", "toll-free", "tollfree", "hotline",
+    "billing", "tech support", "technical support",
+    "main office", "main number", "main line", "front desk",
+    "sales line", "sales:", "info:", "info ",
+    "fax", "after hours", "emergency", "concierge",
+  ];
+
+  // Pull a +/-N character window around a literal match within text. Used
+  // by extractFromText's loose-body mode to inspect the phone's neighborhood
+  // for a contact-context anchor.
+  function surroundingTextFor(text, match, windowChars) {
+    const w = windowChars || 100;
+    const idx = text.indexOf(match);
+    if (idx < 0) return "";
+    return text.substring(
+      Math.max(0, idx - w),
+      Math.min(text.length, idx + match.length + w)
+    ).toLowerCase();
+  }
+
+  function hasPhoneProximityAnchor(surrounding) {
+    if (!surrounding) return false;
+    return PHONE_PROXIMITY_ANCHORS.some((k) => surrounding.includes(k));
+  }
+
+  // opts.requireProximityAnchor: when true, drop phone matches whose +/-100
+  // character window contains no contact-context keyword. Used by the
+  // loose-body scan to keep Google search results / directory pages /
+  // social feeds from dumping every snippet phone into the results.
+  // The narrow CONTACT_SELECTORS scans don't set this flag because they
+  // already proved contact-context at the container level.
+  function extractFromText(text, parentEl, results, seen, opts) {
+    opts = opts || {};
     // Emails
     const emailMatches = text.match(EMAIL_REGEX) || [];
     emailMatches.forEach((email) => {
@@ -851,6 +909,10 @@
       const cleaned = phone.replace(/[^\d+]/g, "");
       const key = phoneKey(cleaned);
       if (!seen.has(key) && cleaned.length >= 10 && cleaned.length <= 15) {
+        if (opts.requireProximityAnchor) {
+          const surrounding = surroundingTextFor(text, phone, 100);
+          if (!hasPhoneProximityAnchor(surrounding)) return;
+        }
         seen.add(key);
         const context = parentEl ? getContext(parentEl) : "";
         const score = scorePhone(context);
