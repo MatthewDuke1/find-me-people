@@ -196,14 +196,14 @@
 
     // 4d. Scan curated page-level metadata for contacts -- Open Graph
     // business properties, IndieWeb rel=me links, Facebook business
-    // contact tags, reply-to and author meta. These are author-curated
-    // signals so any contact found here is high-confidence.
+    // contact tags, reply-to and author meta.
     scanPageMeta(results, seen);
 
-    // 4h. Site-specific override library. A curated registry of known
-    // support contacts for the painful-to-scrape sites we target in our
-    // marketing. Surfaces the canonical contact directly; on-page finds
-    // still run and win on ties via canonical phoneKey dedup.
+    // 4e. Press-release / media-contact extraction.
+    scanPressContacts(results, seen);
+
+    // 4h. Site-specific override library. Surfaces canonical contact
+    // for known painful-to-scrape sites.
     applySiteOverrides(results, seen);
 
     // 5. Scan for hours of operation
@@ -760,6 +760,132 @@
         else if (/^tel:/i.test(href)) pushPhone(href);
       });
     } catch (_) {}
+  }
+
+  // Detect press-release / media-contact blocks and extract contacts
+  // from them with elevated confidence.
+  //
+  // Press releases follow a remarkably consistent convention across PR
+  // wire services and corporate newsrooms: a block near the bottom of
+  // the page labeled with one of a small set of headings ("Media
+  // Contact:", "Press Contact:", "For more information:", "For media
+  // inquiries:") followed by a name, then an email and / or phone. We
+  // anchor on the heading text and extract within a +/-300 char window.
+  //
+  // Trigger conditions (any of the below):
+  //   1. URL path matches a press / newsroom pattern (/press, /news/,
+  //      /newsroom/, /media/, /press-release).
+  //   2. The page body contains one of the press-anchor phrases.
+  //
+  // Contacts found via this path get +20 over the base scoreEmail and
+  // a flat 95 phone score -- press contacts are specifically declared
+  // contact channels, much higher confidence than generic prose.
+  function scanPressContacts(results, seen) {
+    if (!document.body) return;
+
+    const PRESS_URL_PATTERNS = [
+      /\/press(?:[-_\/]|$)/i,
+      /\/newsroom/i,
+      /\/media(?:[-_\/]|$)/i,
+      /\/news\//i,
+      /\/announcements?/i,
+      /\/press-release/i,
+    ];
+
+    const PRESS_ANCHOR_PHRASES = [
+      "media contact", "press contact", "media contacts", "press contacts",
+      "media inquiries", "press inquiries",
+      "for more information", "for further information",
+      "for media inquiries", "for press inquiries",
+      "press relations", "media relations",
+      "for media", "media kit",
+    ];
+
+    const path = (window.location.pathname || "").toLowerCase();
+    const urlSignal = PRESS_URL_PATTERNS.some((p) => p.test(path));
+
+    // Lower-cased body text once, then search anchor positions inside it.
+    let text;
+    try {
+      text = (document.body.innerText || document.body.textContent || "").toLowerCase();
+    } catch (_) { return; }
+    if (!text) return;
+
+    const anchorPositions = [];
+    PRESS_ANCHOR_PHRASES.forEach((phrase) => {
+      let idx = 0;
+      // findAll occurrences -- a long page may have several blocks
+      while ((idx = text.indexOf(phrase, idx)) >= 0) {
+        anchorPositions.push(idx);
+        idx += phrase.length;
+        if (anchorPositions.length >= 8) break; // sanity bound
+      }
+    });
+
+    if (!urlSignal && !anchorPositions.length) return;
+
+    // Collect candidate windows. URL-signal pages get the whole body;
+    // anchor-signal pages get +/-300 chars around each anchor.
+    const windows = [];
+    if (urlSignal && !anchorPositions.length) {
+      // URL-only: scan the whole body, but limit to the bottom half --
+      // press contacts live near the bottom by convention, and limiting
+      // the window keeps us from re-extracting body-prose contacts the
+      // main scan already covered.
+      const start = Math.floor(text.length * 0.5);
+      windows.push(text.substring(start));
+    } else {
+      anchorPositions.forEach((idx) => {
+        const start = Math.max(0, idx - 100);
+        const end = Math.min(text.length, idx + 300);
+        windows.push(text.substring(start, end));
+      });
+    }
+
+    // Extract emails and phones from each window.
+    windows.forEach((win) => {
+      const emails = win.match(EMAIL_REGEX) || [];
+      emails.forEach((raw) => {
+        const email = trimDigitPrefixBleed(raw.toLowerCase());
+        if (seen.has(email)) return;
+        if (
+          email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
+          email.includes("sentry") || email.includes("webpack") ||
+          email.includes("example.com") || email.includes("noreply") ||
+          email.includes("no-reply")
+        ) return;
+        seen.add(email);
+        const ctx = "press / media contact";
+        results.emails.push({
+          value: email,
+          context: ctx,
+          score: Math.min(100, scoreEmail(email, ctx) + 20),
+          source: "press",
+        });
+      });
+
+      const phones = [
+        ...(win.match(PHONE_REGEX) || []),
+        ...(win.match(INTL_PHONE_REGEX) || []),
+      ];
+      phones.forEach((phone) => {
+        const cleaned = phone.replace(/[^\d+]/g, "");
+        if (cleaned.length < 10 || cleaned.length > 15) return;
+        const key = phoneKey(cleaned);
+        if (seen.has(key)) return;
+        // Digit-run guard -- press-release date or article ID could
+        // pattern-match as phone, require a separator or leading +.
+        if (!/[+\-.\s()]/.test(phone)) return;
+        seen.add(key);
+        const ctx = "press / media contact";
+        results.phones.push({
+          value: formatPhone(phone),
+          context: ctx,
+          score: 95,
+          source: "press",
+        });
+      });
+    });
   }
 
   // ====================================================================
