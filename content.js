@@ -84,8 +84,9 @@
 
     document.querySelectorAll('a[href^="tel:"]').forEach((el) => {
       const phone = el.href.replace("tel:", "").replace(/\s/g, "");
-      if (!seen.has(phone) && phone.length >= 10) {
-        seen.add(phone);
+      const key = phoneKey(phone);
+      if (!seen.has(key) && phone.length >= 10) {
+        seen.add(key);
         const context = getContext(el);
         results.phones.push({ value: formatPhone(phone), context, score: 90, source: "tel" });
       }
@@ -391,12 +392,13 @@
     phoneMatches.forEach((phone) => {
       const cleaned = phone.replace(/[^\d+]/g, "");
       if (cleaned.length < 10 || cleaned.length > 15) return;
-      if (seen.has(cleaned)) return;
+      const key = phoneKey(cleaned);
+      if (seen.has(key)) return;
       // JSON often has long runs of digits (IDs, timestamps) that pattern-match
       // phone shapes by accident. Require the original substring to contain at
       // least one non-digit separator OR a leading + to weed those out.
       if (!/[+\-.\s()]/.test(phone)) return;
-      seen.add(cleaned);
+      seen.add(key);
       const context = "from page state";
       results.phones.push({
         value: formatPhone(phone),
@@ -435,8 +437,9 @@
     ];
     phoneMatches.forEach((phone) => {
       const cleaned = phone.replace(/[^\d+]/g, "");
-      if (!seen.has(cleaned) && cleaned.length >= 10 && cleaned.length <= 15) {
-        seen.add(cleaned);
+      const key = phoneKey(cleaned);
+      if (!seen.has(key) && cleaned.length >= 10 && cleaned.length <= 15) {
+        seen.add(key);
         const context = parentEl ? getContext(parentEl) : "";
         const score = scorePhone(context);
         results.phones.push({
@@ -489,6 +492,19 @@
     if (lower.includes("toll") || lower.includes("free")) score += 10;
     if (lower.includes("fax")) score -= 30;
     return Math.max(0, Math.min(100, score));
+  }
+
+  // Canonical key for phone dedup. Strips separators and the US country
+  // code "1" so the same number reaching us as "tel:1(281)816-5935" (with
+  // leading 1 from the href) and as visible text "(281) 816-5935" (without)
+  // collapses to one entry in the results. Prior bug: the tel: handler
+  // stored the raw "1(281)816-5935" string in the seen set; the text-scan
+  // handler stored the digits-only "2818165935" -- different keys for the
+  // same number, so dedup missed and both got pushed.
+  function phoneKey(s) {
+    const digits = String(s).replace(/\D/g, "");
+    if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
+    return digits;
   }
 
   function formatPhone(phone) {
