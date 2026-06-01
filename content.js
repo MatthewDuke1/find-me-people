@@ -228,7 +228,10 @@
     // /direct-contact-information, each with its own contact info). The
     // user shouldn't have to click each one -- we fetch all of them,
     // parse, and merge. Bounded to 5 fetches per scan, per-URL
-    // sessionStorage gate, same-origin only, credentials: 'omit'.
+    // sessionStorage gate, same-origin only, credentials: 'same-origin'
+    // (so cookie-gated content like Cloudflare's cf_clearance pages is
+    // reachable -- same cookies the user already sends when they click
+    // the link manually).
     const discoveredContactUrls = (results.links || [])
       .map((l) => l && l.url)
       .filter((u) => {
@@ -1103,8 +1106,16 @@
   //
   // Safety guards:
   //   - sessionStorage flag: one attempt per origin per session
-  //   - credentials: 'omit' so we don't send the user's cookies (no
-  //     authenticated requests on their behalf)
+  //   - credentials: 'same-origin' so we behave exactly like the user
+  //     clicking the link from this same site -- the user's existing
+  //     session cookies tag along. We deliberately did NOT use 'omit'
+  //     because Cloudflare-protected sites (a sizable fraction of the
+  //     public web) gate even public pages behind a cf_clearance cookie
+  //     the user already has from their normal browsing; without it our
+  //     fetch gets a bot-challenge body back instead of the real page.
+  //     Since the fetch is same-origin by design, the cookies sent are
+  //     ones the user already has on this site -- no third-party
+  //     identification, no cross-site tracking.
   //   - same-origin only; redirects to a different origin are rejected
   //   - response size capped at 1 MB to bound parse latency
   //   - max 3 candidate paths tried; stops at first one with results
@@ -1132,7 +1143,13 @@
   //   - Per-URL sessionStorage gate ("__fmp_fetched_<url>") so re-scans
   //     and page navigations don't re-fetch
   //   - 1 MB body cap per response
-  //   - credentials: 'omit'
+  //   - credentials: 'same-origin' -- the user's existing cookies for
+  //     this site come along, so Cloudflare-style cookie-gated content
+  //     (cf_clearance, etc.) is reachable. Since the fetch is same-
+  //     origin by design, the cookies sent are ones the user already
+  //     has on this site -- equivalent to them clicking the link
+  //     themselves. No third-party identification, no cross-site
+  //     tracking.
   //
   // Found contacts use the canonical phoneKey / trimDigitPrefixBleed
   // helpers, so duplicates against the in-page scan collapse to one entry.
@@ -1165,7 +1182,7 @@
     for (const url of targets) {
       try {
         const resp = await fetch(url, {
-          credentials: "omit",
+          credentials: "same-origin",
           redirect: "follow",
           cache: "no-cache",
         });
@@ -1263,7 +1280,7 @@
       try {
         const url = origin + path;
         const resp = await fetch(url, {
-          credentials: "omit",
+          credentials: "same-origin",
           redirect: "follow",
           cache: "no-cache",
         });
