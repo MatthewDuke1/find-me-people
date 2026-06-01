@@ -47,6 +47,36 @@ The result: reaching a real human for help has become a skill, not a right.
 
 ## Changelog
 
+### 1.5.7 -- 2026-06-01
+
+Significant scan-quality release. Eleven merged PRs since 1.5.2, bundled together once the feature work stabilized. Themes: bypass chatbots specifically rather than just scanning around them, broaden the set of places we look for contacts, and clean up the noise (own-email filtering, phone proximity anchors) that was eroding trust in the rest of the results.
+
+**New: bypass chatbots, read their KB directly.**
+
+- **Chatbot vendor detection.** Detects 10 vendor widgets -- Intercom, Zendesk, Drift, Crisp, HubSpot, Tidio, LiveChat, Tawk, Freshchat, Olark -- by probing their config globals from a page-world script bridge. When a vendor is identified, we extract any directly exposed contact email, reconstruct the vendor's standard help-center / contact URL from the account identifier (\`app_id\` / subdomain / workspace ID), and surface that URL in the side panel's Support pages section. No interaction with the chat UI itself.
+
+**New: broader contact-page discovery.**
+
+- **Broader URL pattern matching.** \`CONTACT_PAGE_PATTERNS\` was too narrow -- \`/\/contact/i\` missed \`/media-contacts\` and \`/direct-contact-information\` (dhs.gov-style URLs). Replaced with a boundary-aware pattern (\`/[-_\/]contacts?(?:[-_\/]|$)/i\`) plus a new \`/press\` pattern for media pages.
+- **Discovered-page background fetch.** The existing fallback fetch only fired when the in-page scan returned zero contacts. Most gov / large-org sites surface multiple specialized contact pages (\`/contact\` AND \`/media-contacts\` AND \`/direct-contact-information\`); only the first was being reached. New \`fetchDiscoveredContactPages\` fetches every same-origin contact-page link found during the scan (max 5 per scan, per-URL sessionStorage gate, 1 MB cap).
+- **\`credentials: 'same-origin'\` for background fetches.** Cloudflare-protected sites (a significant fraction of the public web) gate even public pages behind a \`cf_clearance\` cookie the user already has from normal browsing. With the previous \`credentials: 'omit'\` we got bot-challenge bodies back instead of real pages. Same-origin sends only cookies the user already has on this site -- equivalent to them clicking the link manually. No third-party identification, no cross-site tracking.
+- **Page meta tag scan.** New \`scanPageMeta\` pulls contacts from author-declared metadata: \`<meta property="og:email">\`, \`<meta property="business:contact_data:*">\`, \`<meta name="contact">\`, \`<link rel="me">\`, \`<link rel="author">\`. Anything found here is high-confidence because the site author put it there deliberately.
+- **Press-release / media-contact detection.** New \`scanPressContacts\` triggers on press / newsroom / media URLs OR on body text containing one of 15 anchor phrases ("Media Contact:", "For more information:", "press relations", etc.). Extracts within +/-300 char windows of each anchor with elevated confidence.
+- **App Store / Play Store developer pages.** New \`scanAppStorePages\` activates on \`apps.apple.com\` and \`play.google.com\` listings. Extracts the developer email (\`mailto:\` anchors + \`[itemprop="email"]\` schema markup), phones, and labeled support / privacy / website links the stores require by policy.
+- **Footer-specialized labeled-field extraction.** New \`scanFooterSpecialized\` walks \`<footer>\` / \`[role="contentinfo"]\` / \`[class*="footer"]\` and matches labeled patterns ("Toll Free:", "Fax:", "Sales:", "Customer Service - ..."). Footer-located contacts get a +10 score boost since footers are conventionally the canonical contact surface for a business.
+- **Site-specific override library.** Curated registry of 24 canonical support contacts for the painful-to-scrape sites the product targets: 6 airlines (Spirit, United, Delta, American, JetBlue, Southwest), 5 telcos (Xfinity, Comcast, AT&T, Verizon, T-Mobile), 4 banks (Wells Fargo, BofA, Chase, Citi), 3 e-commerce / payments (Amazon, eBay, PayPal), 2 streaming (Netflix, Hulu), 2 insurance (GEICO, State Farm), 2 government (IRS, SSA). Each entry stamped with \`lastVerified: "YYYY-MM-DD"\`. On-page finds still run and win via canonical \`phoneKey\` dedup -- so a stale override gets silently replaced by what the live page exposes.
+
+**Noise reduction (UX-critical fixes).**
+
+- **Filter the user's own logged-in identity.** On any signed-in app (Google search, Gmail, GitHub, LinkedIn, Slack), the avatar's \`aria-label\` ("Google Account: Matt Duke (matt@gmail.com)") was getting parsed as a found contact. New \`seedPersonalIdentity\` runs as step 0 of \`scanPage\`, identifies the user's own contacts from account-UI patterns, and pre-seeds them into the dedup \`seen\` set so all downstream push sites naturally skip them. Pattern verified against 17 cases; legitimate contacts that mention "account" (e.g. "Contact our account team at...") are NOT filtered.
+- **Phone proximity anchor for loose-body scans.** Random snippet phones on Google search results, business directories, social feeds were being surfaced because the body \`innerText\` scan saw a 10-digit shape and pushed it. Phones from loose-body scans now require at least one of ~35 contact-context keywords (\`contact\`, \`support\`, \`call us\`, \`toll free\`, \`tech support\`, \`main office\`, etc.) within +/-100 chars of the match.
+
+**Messaging.**
+
+- **Manifest description rewritten** for the Web Store / AMO listing: "Bypass chatbots. Reads the chatbot's own knowledge base to surface real customer service contacts. 100% local, no account."
+- **README intro updated** to name the 10 chatbot vendors detected and state the bypass mechanism.
+- **\`PRIVACY_POLICY.md\` accuracy pass.** The previous policy said "the extension makes zero network requests." That stopped being true when the same-origin fallback fetch shipped in 1.5.0. The rewritten policy enumerates the **two** anonymous network-request paths the extension actually makes (same-origin fallback fetch + Zendesk help-center search) with full constraints per path.
+
 ### 1.5.2 -- 2026-06-01
 
 Scan-quality patch driven by two bugs an early Product Hunt user reported using https://www.thesanctuarygym.com/ as a control page. No new features; the side panel just produces cleaner results on sites that mix formatting variants or stack contact info across adjacent DOM blocks.
