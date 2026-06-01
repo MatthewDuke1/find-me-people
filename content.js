@@ -197,6 +197,9 @@
     // 4d. Scan curated page-level metadata for contacts.
     scanPageMeta(results, seen);
 
+    // 4e. Press-release / media-contact extraction.
+    scanPressContacts(results, seen);
+
     // 4g. Footer-specialized pass.
     scanFooterSpecialized(results, seen);
 
@@ -225,7 +228,10 @@
     // /direct-contact-information, each with its own contact info). The
     // user shouldn't have to click each one -- we fetch all of them,
     // parse, and merge. Bounded to 5 fetches per scan, per-URL
-    // sessionStorage gate, same-origin only, credentials: 'omit'.
+    // sessionStorage gate, same-origin only, credentials: 'same-origin'
+    // (so cookie-gated content like Cloudflare's cf_clearance pages is
+    // reachable -- same cookies the user already sends when they click
+    // the link manually).
     const discoveredContactUrls = (results.links || [])
       .map((l) => l && l.url)
       .filter((u) => {
@@ -756,6 +762,132 @@
     } catch (_) {}
   }
 
+  // Detect press-release / media-contact blocks and extract contacts
+  // from them with elevated confidence.
+  //
+  // Press releases follow a remarkably consistent convention across PR
+  // wire services and corporate newsrooms: a block near the bottom of
+  // the page labeled with one of a small set of headings ("Media
+  // Contact:", "Press Contact:", "For more information:", "For media
+  // inquiries:") followed by a name, then an email and / or phone. We
+  // anchor on the heading text and extract within a +/-300 char window.
+  //
+  // Trigger conditions (any of the below):
+  //   1. URL path matches a press / newsroom pattern (/press, /news/,
+  //      /newsroom/, /media/, /press-release).
+  //   2. The page body contains one of the press-anchor phrases.
+  //
+  // Contacts found via this path get +20 over the base scoreEmail and
+  // a flat 95 phone score -- press contacts are specifically declared
+  // contact channels, much higher confidence than generic prose.
+  function scanPressContacts(results, seen) {
+    if (!document.body) return;
+
+    const PRESS_URL_PATTERNS = [
+      /\/press(?:[-_\/]|$)/i,
+      /\/newsroom/i,
+      /\/media(?:[-_\/]|$)/i,
+      /\/news\//i,
+      /\/announcements?/i,
+      /\/press-release/i,
+    ];
+
+    const PRESS_ANCHOR_PHRASES = [
+      "media contact", "press contact", "media contacts", "press contacts",
+      "media inquiries", "press inquiries",
+      "for more information", "for further information",
+      "for media inquiries", "for press inquiries",
+      "press relations", "media relations",
+      "for media", "media kit",
+    ];
+
+    const path = (window.location.pathname || "").toLowerCase();
+    const urlSignal = PRESS_URL_PATTERNS.some((p) => p.test(path));
+
+    // Lower-cased body text once, then search anchor positions inside it.
+    let text;
+    try {
+      text = (document.body.innerText || document.body.textContent || "").toLowerCase();
+    } catch (_) { return; }
+    if (!text) return;
+
+    const anchorPositions = [];
+    PRESS_ANCHOR_PHRASES.forEach((phrase) => {
+      let idx = 0;
+      // findAll occurrences -- a long page may have several blocks
+      while ((idx = text.indexOf(phrase, idx)) >= 0) {
+        anchorPositions.push(idx);
+        idx += phrase.length;
+        if (anchorPositions.length >= 8) break; // sanity bound
+      }
+    });
+
+    if (!urlSignal && !anchorPositions.length) return;
+
+    // Collect candidate windows. URL-signal pages get the whole body;
+    // anchor-signal pages get +/-300 chars around each anchor.
+    const windows = [];
+    if (urlSignal && !anchorPositions.length) {
+      // URL-only: scan the whole body, but limit to the bottom half --
+      // press contacts live near the bottom by convention, and limiting
+      // the window keeps us from re-extracting body-prose contacts the
+      // main scan already covered.
+      const start = Math.floor(text.length * 0.5);
+      windows.push(text.substring(start));
+    } else {
+      anchorPositions.forEach((idx) => {
+        const start = Math.max(0, idx - 100);
+        const end = Math.min(text.length, idx + 300);
+        windows.push(text.substring(start, end));
+      });
+    }
+
+    // Extract emails and phones from each window.
+    windows.forEach((win) => {
+      const emails = win.match(EMAIL_REGEX) || [];
+      emails.forEach((raw) => {
+        const email = trimDigitPrefixBleed(raw.toLowerCase());
+        if (seen.has(email)) return;
+        if (
+          email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
+          email.includes("sentry") || email.includes("webpack") ||
+          email.includes("example.com") || email.includes("noreply") ||
+          email.includes("no-reply")
+        ) return;
+        seen.add(email);
+        const ctx = "press / media contact";
+        results.emails.push({
+          value: email,
+          context: ctx,
+          score: Math.min(100, scoreEmail(email, ctx) + 20),
+          source: "press",
+        });
+      });
+
+      const phones = [
+        ...(win.match(PHONE_REGEX) || []),
+        ...(win.match(INTL_PHONE_REGEX) || []),
+      ];
+      phones.forEach((phone) => {
+        const cleaned = phone.replace(/[^\d+]/g, "");
+        if (cleaned.length < 10 || cleaned.length > 15) return;
+        const key = phoneKey(cleaned);
+        if (seen.has(key)) return;
+        // Digit-run guard -- press-release date or article ID could
+        // pattern-match as phone, require a separator or leading +.
+        if (!/[+\-.\s()]/.test(phone)) return;
+        seen.add(key);
+        const ctx = "press / media contact";
+        results.phones.push({
+          value: formatPhone(phone),
+          context: ctx,
+          score: 95,
+          source: "press",
+        });
+      });
+    });
+  }
+
   // Footer-specialized contact extraction. Three things this pass adds
   // beyond the generic CONTACT_SELECTORS body-text scan:
   //
@@ -1203,8 +1335,16 @@
   //
   // Safety guards:
   //   - sessionStorage flag: one attempt per origin per session
-  //   - credentials: 'omit' so we don't send the user's cookies (no
-  //     authenticated requests on their behalf)
+  //   - credentials: 'same-origin' so we behave exactly like the user
+  //     clicking the link from this same site -- the user's existing
+  //     session cookies tag along. We deliberately did NOT use 'omit'
+  //     because Cloudflare-protected sites (a sizable fraction of the
+  //     public web) gate even public pages behind a cf_clearance cookie
+  //     the user already has from their normal browsing; without it our
+  //     fetch gets a bot-challenge body back instead of the real page.
+  //     Since the fetch is same-origin by design, the cookies sent are
+  //     ones the user already has on this site -- no third-party
+  //     identification, no cross-site tracking.
   //   - same-origin only; redirects to a different origin are rejected
   //   - response size capped at 1 MB to bound parse latency
   //   - max 3 candidate paths tried; stops at first one with results
@@ -1232,7 +1372,13 @@
   //   - Per-URL sessionStorage gate ("__fmp_fetched_<url>") so re-scans
   //     and page navigations don't re-fetch
   //   - 1 MB body cap per response
-  //   - credentials: 'omit'
+  //   - credentials: 'same-origin' -- the user's existing cookies for
+  //     this site come along, so Cloudflare-style cookie-gated content
+  //     (cf_clearance, etc.) is reachable. Since the fetch is same-
+  //     origin by design, the cookies sent are ones the user already
+  //     has on this site -- equivalent to them clicking the link
+  //     themselves. No third-party identification, no cross-site
+  //     tracking.
   //
   // Found contacts use the canonical phoneKey / trimDigitPrefixBleed
   // helpers, so duplicates against the in-page scan collapse to one entry.
@@ -1265,7 +1411,7 @@
     for (const url of targets) {
       try {
         const resp = await fetch(url, {
-          credentials: "omit",
+          credentials: "same-origin",
           redirect: "follow",
           cache: "no-cache",
         });
@@ -1363,7 +1509,7 @@
       try {
         const url = origin + path;
         const resp = await fetch(url, {
-          credentials: "omit",
+          credentials: "same-origin",
           redirect: "follow",
           cache: "no-cache",
         });
