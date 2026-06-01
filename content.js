@@ -201,6 +201,12 @@
     // person behind it.
     scanPressContacts(results, seen);
 
+    // 4h. Site-specific override library. A curated registry of known
+    // support contacts for the painful-to-scrape sites. Surfaces the
+    // canonical contact directly; on-page finds still run and win on
+    // ties via canonical phoneKey dedup.
+    applySiteOverrides(results, seen);
+
     // 5. Scan for hours of operation
     extractHours(results, hoursSeen);
 
@@ -794,6 +800,272 @@
           score: 95,
           source: "press",
         });
+      });
+    });
+  }
+
+  // ====================================================================
+  // SITE-SPECIFIC OVERRIDE LIBRARY
+  //
+  // A curated registry of canonical support contacts for the painful-
+  // to-scrape sites users come to Find Me People to escape -- airlines
+  // that hide their phone number behind 4 chatbot prompts, telcos that
+  // gate everything behind a login, banks whose contact page is a
+  // half-megabyte JS app.
+  //
+  // Each entry maps a host (or a host pattern) to a set of
+  // pre-verified contacts that the extension surfaces directly when
+  // the user is on that host, without needing to scrape anything.
+  //
+  // How to add an entry:
+  //   1. Find the company's canonical support contact info from an
+  //      authoritative public source (their own contact page, their
+  //      Wikipedia infobox, their SEC 10-K, etc.).
+  //   2. Stamp the entry with `lastVerified: "YYYY-MM-DD"` so anyone
+  //      auditing the registry later can see when it was checked.
+  //   3. The hostname KEY is the apex domain. The function does the
+  //      "www." stripping and subdomain matching automatically.
+  //
+  // How an entry interacts with the live page scan:
+  //   - Overrides are added to results AFTER the in-page scan paths
+  //     run, but they go through the same canonical phoneKey /
+  //     trimDigitPrefixBleed dedup helpers. So if the live page DID
+  //     surface the same number, the override is silently skipped --
+  //     no duplicates.
+  //   - Score 85: high (above body-text scorePhone, below tel: link
+  //     and meta-tag floors). Reflects "we trust this but it's not
+  //     from the live page right now."
+  //   - source: "site-override" so per-source debug can identify it.
+  //
+  // Stale-entry policy: if the user reports a number is wrong, prefer
+  // removing the entry over editing it -- the next scan will fall
+  // back to whatever the live page exposes. Better to surface
+  // nothing than to surface a dead number.
+  // ====================================================================
+  const SITE_OVERRIDES = {
+    // ---- Airlines ----
+    "spirit.com": {
+      label: "Spirit Airlines", category: "airline", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-855-728-3555", role: "Reservations / customer service" },
+      ],
+    },
+    "united.com": {
+      label: "United Airlines", category: "airline", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-864-8331", role: "Reservations" },
+      ],
+    },
+    "delta.com": {
+      label: "Delta Air Lines", category: "airline", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-221-1212", role: "Reservations" },
+      ],
+    },
+    "aa.com": {
+      label: "American Airlines", category: "airline", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-433-7300", role: "Reservations" },
+      ],
+    },
+    "jetblue.com": {
+      label: "JetBlue Airways", category: "airline", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-538-2583", role: "Reservations" },
+      ],
+    },
+    "southwest.com": {
+      label: "Southwest Airlines", category: "airline", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-435-9792", role: "Customer service" },
+      ],
+    },
+
+    // ---- Telcos / ISPs ----
+    "xfinity.com": {
+      label: "Xfinity / Comcast", category: "telco", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-934-6489", role: "Customer service" },
+      ],
+    },
+    "comcast.com": {
+      label: "Comcast", category: "telco", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-934-6489", role: "Customer service" },
+      ],
+    },
+    "att.com": {
+      label: "AT&T", category: "telco", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-331-0500", role: "Customer service" },
+      ],
+    },
+    "verizon.com": {
+      label: "Verizon", category: "telco", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-922-0204", role: "Customer service" },
+      ],
+    },
+    "t-mobile.com": {
+      label: "T-Mobile", category: "telco", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-937-8997", role: "Customer service" },
+      ],
+    },
+
+    // ---- Banks ----
+    "wellsfargo.com": {
+      label: "Wells Fargo", category: "bank", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-869-3557", role: "Customer service" },
+      ],
+    },
+    "bankofamerica.com": {
+      label: "Bank of America", category: "bank", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-432-1000", role: "Customer service" },
+      ],
+    },
+    "chase.com": {
+      label: "Chase", category: "bank", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-935-9935", role: "Customer service" },
+      ],
+    },
+    "citi.com": {
+      label: "Citi", category: "bank", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-374-9700", role: "Customer service" },
+      ],
+    },
+
+    // ---- E-commerce / payments ----
+    "amazon.com": {
+      label: "Amazon", category: "ecommerce", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-888-280-4331", role: "Customer service" },
+      ],
+    },
+    "ebay.com": {
+      label: "eBay", category: "ecommerce", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-866-540-3229", role: "Customer service" },
+      ],
+    },
+    "paypal.com": {
+      label: "PayPal", category: "payments", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-888-221-1161", role: "Customer service" },
+      ],
+    },
+
+    // ---- Streaming ----
+    "netflix.com": {
+      label: "Netflix", category: "streaming", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-866-579-7172", role: "Customer service" },
+      ],
+    },
+    "hulu.com": {
+      label: "Hulu", category: "streaming", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-888-265-6650", role: "Customer service" },
+      ],
+    },
+
+    // ---- Insurance ----
+    "geico.com": {
+      label: "GEICO", category: "insurance", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-861-8380", role: "Customer service" },
+      ],
+    },
+    "statefarm.com": {
+      label: "State Farm", category: "insurance", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-782-8332", role: "Customer service" },
+      ],
+    },
+
+    // ---- Government (often have phone but buried) ----
+    "irs.gov": {
+      label: "IRS", category: "government", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-829-1040", role: "Individual taxpayer line" },
+      ],
+    },
+    "ssa.gov": {
+      label: "Social Security Administration", category: "government", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-772-1213", role: "Customer service" },
+      ],
+    },
+  };
+
+  // Look up the override entry that matches the current page's hostname.
+  // Normalizes by stripping "www." and matching the registry key as a
+  // suffix -- so any subdomain of an entry inherits the override (e.g.
+  // help.spirit.com matches the spirit.com entry).
+  function lookupSiteOverride(hostname) {
+    if (!hostname) return null;
+    const host = hostname.toLowerCase().replace(/^www\./, "");
+    if (SITE_OVERRIDES[host]) return SITE_OVERRIDES[host];
+    // Suffix match: walk up subdomain levels until we either find an
+    // entry or run out of dots.
+    let parts = host.split(".");
+    while (parts.length > 1) {
+      parts.shift();
+      const candidate = parts.join(".");
+      if (SITE_OVERRIDES[candidate]) return SITE_OVERRIDES[candidate];
+    }
+    return null;
+  }
+
+  function applySiteOverrides(results, seen) {
+    let entry;
+    try {
+      entry = lookupSiteOverride(window.location.hostname);
+    } catch (_) { return; }
+    if (!entry) return;
+
+    const ctxBase = `${entry.label} (site-known`;
+
+    (entry.phones || []).forEach((p) => {
+      if (!p || !p.value) return;
+      const key = phoneKey(p.value);
+      if (!key || key.length < 10 || seen.has(key)) return;
+      seen.add(key);
+      const ctx = `${ctxBase} ${p.role || "support"})`;
+      results.phones.push({
+        value: formatPhone(p.value),
+        context: ctx,
+        score: 85,
+        source: "site-override",
+      });
+    });
+
+    (entry.emails || []).forEach((e) => {
+      if (!e || !e.value) return;
+      const email = trimDigitPrefixBleed(String(e.value).toLowerCase());
+      if (!email.includes("@") || seen.has(email)) return;
+      seen.add(email);
+      const ctx = `${ctxBase} ${e.role || "support"})`;
+      results.emails.push({
+        value: email,
+        context: ctx,
+        score: 85,
+        source: "site-override",
+      });
+    });
+
+    (entry.links || []).forEach((l) => {
+      if (!l || !l.url) return;
+      if (seen.has(l.url)) return;
+      seen.add(l.url);
+      results.links.push({
+        url: l.url,
+        text: l.text || `${entry.label} contact page`,
+        source: "site-override",
       });
     });
   }
