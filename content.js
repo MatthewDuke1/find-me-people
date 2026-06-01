@@ -176,6 +176,16 @@
       fetchAndScanFallbackPages(results, seen);
     }
 
+    // 7. If the page is a Zendesk-powered help center (or carries the
+    // Zendesk Web Widget snippet with a discoverable subdomain), query
+    // the public Help Center search API for contact-related articles.
+    // The bot the user sees in the widget is just RAG over these
+    // articles -- we read them directly, no chat-UI dance required.
+    const zendeskSub = detectZendeskSubdomain();
+    if (zendeskSub) {
+      fetchZendeskHelpCenter(zendeskSub, results, seen);
+    }
+
     return results;
   }
 
@@ -636,6 +646,184 @@
   // "thesanctuarygymtx@outlook.com".
   function trimDigitPrefixBleed(email) {
     return email.replace(/^\d{5,}(?=[a-z])/, "");
+  }
+
+  // Identify the Zendesk subdomain for the current page, or null if the
+  // page isn't a Zendesk help center / doesn't carry a Web Widget that
+  // tells us which Zendesk account it belongs to.
+  //
+  // Three signals checked in order:
+  //   1. Current host matches "{sub}.zendesk.com" -- the user is already
+  //      on a Zendesk help center (e.g. support.zendesk.com).
+  //   2. A <script> on the page points at static.zdassets.com with a
+  //      ?key= query param -- the Zendesk Web Widget snippet, used on
+  //      marketing pages that load the embedded chat. The key IS the
+  //      account subdomain.
+  //   3. A <script> on the page points at "{sub}.zendesk.com/..." --
+  //      Help Center alias pages and embedded resources.
+  //
+  // Returns the subdomain string or null. Cheap (just DOM queries +
+  // regex), so safe to call on every page.
+  function detectZendeskSubdomain() {
+    try {
+      const hostMatch = window.location.hostname.match(/^([a-z0-9-]+)\.zendesk\.com$/i);
+      if (hostMatch) return hostMatch[1].toLowerCase();
+    } catch (_) {}
+    const scripts = document.querySelectorAll('script[src*="zdassets"], script[src*="zendesk.com"]');
+    for (let i = 0; i < scripts.length; i++) {
+      const src = scripts[i].src || "";
+      const keyMatch = src.match(/static\.zdassets\.com\/ekr\/[^?]+\?key=([a-z0-9-]+)/i);
+      if (keyMatch) return keyMatch[1].toLowerCase();
+      const subMatch = src.match(/\/\/([a-z0-9-]+)\.zendesk\.com\//i);
+      if (subMatch) return subMatch[1].toLowerCase();
+    }
+    return null;
+  }
+
+  // Query the public Zendesk Help Center search API for contact-related
+  // articles, extract emails/phones from the article bodies, and merge
+  // them into results in place.
+  //
+  // The bot the user sees in the Zendesk Web Widget is a thin RAG layer
+  // over these very articles. Reading them directly returns the same
+  // contact info the bot would surface if the user managed to navigate
+  // its escalation flow -- without any chat-UI interaction.
+  //
+  // Behavior:
+  //   - Fire-and-forget: scanPage stays synchronous, the fetch resolves
+  //     out-of-band and mutates results. badge gets re-pushed via
+  //     updateBadge after merge.
+  //   - Once per subdomain per session (sessionStorage flag) -- a typical
+  //     site only needs one query, and rescans shouldn't repeat it.
+  //   - credentials: "omit" -- no cookies. From Zendesk's view we look
+  //     like any unauthenticated visitor hitting their public search.
+  //   - Bounded: per_page=10, body capped at 1 MB before parse, results
+  //     loop bails after 25 articles.
+  //   - Articles get a score floor of 95 -- they come from the company's
+  //     own knowledge base, which is the highest-confidence source we
+  //     have short of a mailto: link.
+  async function fetchZendeskHelpCenter(subdomain, results, seen) {
+    if (!subdomain || typeof subdomain !== "string") return;
+
+    // Once-per-session-per-subdomain gate
+    try {
+      const CACHE_KEY = "__fmp_zendesk_searched_" + subdomain;
+      if (sessionStorage.getItem(CACHE_KEY)) return;
+      sessionStorage.setItem(CACHE_KEY, "1");
+    } catch (_) {
+      return;
+    }
+
+    const url = "https://" + subdomain + ".zendesk.com/api/v2/help_center/articles/search.json?per_page=10&query=contact";
+    let json;
+    try {
+      const resp = await fetch(url, {
+        credentials: "omit",
+        redirect: "follow",
+        cache: "no-cache",
+      });
+      if (!resp.ok) return;
+      const text = await resp.text();
+      if (!text || text.length > 1024 * 1024) return;
+      try { json = JSON.parse(text); } catch (_) { return; }
+    } catch (_) {
+      return;
+    }
+
+    if (!json || !Array.isArray(json.results)) return;
+
+    let added = 0;
+    const articles = json.results.slice(0, 25);
+    for (const article of articles) {
+      if (!article || typeof article.body !== "string") continue;
+
+      // The body is HTML. Strip tags before running our text regexes so
+      // attribute values (href="mailto:..." etc.) and tag boundaries
+      // don't pollute the match. innerText-style extraction via a
+      // throwaway DOMParser doc would be more thorough; a tag-strip
+      // suffices here because Zendesk article bodies are simple.
+      const stripped = article.body
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&amp;/gi, "&")
+        .replace(/&lt;/gi, "<")
+        .replace(/&gt;/gi, ">")
+        .replace(/\s+/g, " ");
+
+      const articleUrl = article.html_url || article.url || "";
+      const articleTitle = (article.title || "").substring(0, 80);
+      const context = "Zendesk KB: " + articleTitle;
+
+      // Emails
+      const emailMatches = stripped.match(EMAIL_REGEX) || [];
+      emailMatches.forEach((email) => {
+        email = trimDigitPrefixBleed(email.toLowerCase());
+        if (seen.has(email)) return;
+        if (
+          email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
+          email.includes("sentry") || email.includes("webpack") ||
+          email.includes("example.com") || email.includes("noreply") ||
+          email.includes("no-reply")
+        ) return;
+        seen.add(email);
+        results.emails.push({
+          value: email,
+          context,
+          // 95 floor: the company curated this content as their public
+          // support documentation; trust accordingly.
+          score: Math.max(95, scoreEmail(email, context)),
+          source: "zendesk-kb:" + subdomain,
+        });
+        added++;
+      });
+
+      // Phones
+      const phoneMatches = [
+        ...(stripped.match(PHONE_REGEX) || []),
+        ...(stripped.match(INTL_PHONE_REGEX) || []),
+      ];
+      phoneMatches.forEach((phone) => {
+        const cleaned = phone.replace(/[^\d+]/g, "");
+        if (cleaned.length < 10 || cleaned.length > 15) return;
+        const key = phoneKey(cleaned);
+        if (seen.has(key)) return;
+        // Same digit-run heuristic the globals scan uses -- the article
+        // body may quote Zendesk article IDs (long bare digit runs).
+        // Require a separator or leading +.
+        if (!/[+\-.\s()]/.test(phone)) return;
+        seen.add(key);
+        results.phones.push({
+          value: formatPhone(phone),
+          context,
+          score: 95,
+          source: "zendesk-kb:" + subdomain,
+        });
+        added++;
+      });
+
+      // Push the article itself as a support link so the user can read it.
+      if (articleUrl && !seen.has(articleUrl)) {
+        seen.add(articleUrl);
+        results.links.push({
+          url: articleUrl,
+          text: articleTitle || "Zendesk help article",
+          source: "zendesk-kb:" + subdomain,
+        });
+      }
+    }
+
+    if (added > 0) {
+      // Re-sort after merging fresh results.
+      results.emails.sort((a, b) => b.score - a.score);
+      results.phones.sort((a, b) => b.score - a.score);
+      // Push an updated badge so the toolbar reflects the new finds.
+      const total = results.emails.length + results.phones.length;
+      try {
+        chrome.runtime.sendMessage({ action: "updateBadge", count: total }).catch(() => {});
+      } catch (_) {}
+    }
   }
 
   function extractFromText(text, parentEl, results, seen) {
