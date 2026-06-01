@@ -152,6 +152,16 @@
     // Wappalyzer uses for tech fingerprinting.
     scanPageGlobals(results, seen);
 
+    // 4c. Detect chatbot widgets and read their config globals. When a
+    // company hides its real support email behind an Intercom / Zendesk /
+    // Drift / Crisp / HubSpot / Tidio / LiveChat / Tawk / Freshchat / Olark
+    // widget, the widget's SDK still stashes config on `window` -- account
+    // ID, sometimes a support email, often enough to reconstruct the
+    // vendor's contact / help-center URL. Pulling from those globals turns
+    // a chatbot into a discoverable contact channel without us ever
+    // interacting with the chat UI.
+    scanChatbotVendors(results, seen);
+
     // 5. Scan for hours of operation
     extractHours(results, hoursSeen);
 
@@ -435,6 +445,168 @@
         score: scorePhone(context),
         source: "globals",
       });
+    });
+  }
+
+  // Detect chatbot vendors and read their config globals.
+  //
+  // Every major chat widget loads a JS SDK that stashes its config on
+  // `window` before the widget iframe renders. The widget itself sits in a
+  // cross-origin iframe we can't read, but its config (account ID, support
+  // email, sometimes a fallback phone, help-center URL) lives in the host
+  // page's JS context -- same place __NEXT_DATA__ lives. Same page-world
+  // bridge pattern scanPageGlobals uses: inject a tiny <script>, serialize
+  // the targets onto a hidden DOM bridge, read back, clean up.
+  //
+  // For each detected vendor we extract:
+  //   1. Any email/phone directly exposed in the config (rare but very
+  //      high-confidence -- chatbot config emails are almost always the
+  //      real support address).
+  //   2. The vendor account identifier (app_id / subdomain / website_id /
+  //      portal_id / license / token) which we use to reconstruct the
+  //      vendor's standard help-center URL. That URL gets pushed into
+  //      results.links so the side panel surfaces it under "Support pages"
+  //      -- one click away from the real contact form.
+  //
+  // No interaction with the chat UI itself. We don't type into it, we
+  // don't open it, we don't bypass the vendor's flow. This is passive
+  // scanning, exactly the same risk profile as scanPageGlobals.
+  function scanChatbotVendors(results, seen) {
+    if (!document.body) return;
+
+    let bridge;
+    let json = "";
+    try {
+      bridge = document.createElement("div");
+      bridge.id = "fmp-chatbot-bridge";
+      bridge.style.display = "none";
+      document.body.appendChild(bridge);
+
+      const script = document.createElement("script");
+      // Single self-executing IIFE: probe each vendor's window globals and
+      // any related script[src] / iframe[src] markers, serialize the bits
+      // we want, stash on bridge. Kept inline for the same CSP-tolerance
+      // reason as the scanPageGlobals injection -- one script element only.
+      script.textContent =
+        "(function(){try{var d={};" +
+        // Intercom: intercomSettings.app_id, email_support_address.
+        "try{var ic=window.intercomSettings;if(ic||window.Intercom){d.intercom={app_id:(ic&&ic.app_id)||null,email:(ic&&(ic.email_support_address||ic.support_email))||null};}}catch(e){}" +
+        // Zendesk: detected via globals; subdomain pulled from snippet src.
+        "try{if(window.zESettings||window.zE||window.zEACLoaded){var sub=null;var ss=document.querySelectorAll('script[src*=\"zdassets\"],script[src*=\"zendesk\"]');for(var i=0;i<ss.length;i++){var u=ss[i].src||'';var m=u.match(/static\\.zdassets\\.com\\/ekr\\/[^?]+\\?key=([a-z0-9-]+)/);if(m){sub=m[1];break;}var m2=u.match(/\\/\\/([a-z0-9-]+)\\.zendesk\\.com/);if(m2){sub=m2[1];break;}}d.zendesk={subdomain:sub};}}catch(e){}" +
+        // Drift: drift / driftt globals. embedId is the widget account.
+        "try{var dr=window.drift||window.driftt;if(dr){var eid=null;try{eid=(dr.api&&dr.api.embedId)||(dr.api&&dr.api.params&&dr.api.params.embedId)||null;}catch(e){}d.drift={embed_id:eid};}}catch(e){}" +
+        // Crisp: CRISP_WEBSITE_ID is the workspace UUID.
+        "try{if(window.CRISP_WEBSITE_ID||window.$crisp){d.crisp={website_id:window.CRISP_WEBSITE_ID||null};}}catch(e){}" +
+        // HubSpot: portal id from hbspt or first _hsq queue item.
+        "try{if(window._hsq||window.hbspt||window.HubSpotConversations){var pid=null;try{if(window.hbspt&&window.hbspt.portal&&window.hbspt.portal.id)pid=window.hbspt.portal.id;}catch(e){}if(!pid&&window._hsq&&window._hsq.length){for(var j=0;j<window._hsq.length;j++){var it=window._hsq[j];if(it&&it[1]&&it[1].portalId){pid=it[1].portalId;break;}}}d.hubspot={portal_id:pid};}}catch(e){}" +
+        // Tidio: project key only exposed via tidioIdentify in some integrations.
+        "try{if(window.tidioChatApi||window.tidioIdentify){d.tidio={detected:true};}}catch(e){}" +
+        // LiveChat: license number.
+        "try{var lc=window.__lc;if(lc||window.LC_API){d.livechat={license:(lc&&lc.license)||null};}}catch(e){}" +
+        // Tawk.to: property id surfaced via script src embed/<propertyId>/<widgetId>.
+        "try{if(window.Tawk_API||window.Tawk_LoadStart){var tprop=null;var tss=document.querySelectorAll('script[src*=\"tawk.to\"]');for(var k=0;k<tss.length;k++){var tu=tss[k].src||'';var tm=tu.match(/embed\\.tawk\\.to\\/([a-f0-9]+)\\/[a-z0-9]+/i);if(tm){tprop=tm[1];break;}}d.tawk={property_id:tprop};}}catch(e){}" +
+        // Freshchat: token + host.
+        "try{var fs=window.fcSettings;if(fs||window.fcWidget){d.freshchat={token:(fs&&fs.token)||null,host:(fs&&fs.host)||null};}}catch(e){}" +
+        // Olark: siteId in olark.configuration.
+        "try{if(window.olark){var sid=null;try{sid=(window.olark.configuration&&window.olark.configuration.siteId)||null;}catch(e){}d.olark={site_id:sid};}}catch(e){}" +
+        // Serialize with the same WeakSet-cycle-guard pattern as scanPageGlobals.
+        "var sn=new WeakSet();var rp=function(k,v){if(v&&typeof v==='object'){if(sn.has(v))return undefined;sn.add(v);}if(typeof v==='function')return undefined;if(v&&v.nodeType)return undefined;return v;};var s='';try{s=JSON.stringify(d,rp);}catch(e){}if(s&&s.length>50000)s=s.substring(0,50000);var el=document.getElementById('fmp-chatbot-bridge');if(el)el.setAttribute('data-chatbot',s||'');}catch(e){}})();";
+      document.documentElement.appendChild(script);
+      if (script.parentNode) script.parentNode.removeChild(script);
+
+      json = bridge.getAttribute("data-chatbot") || "";
+    } catch (_) {
+      // Strict-CSP sites block the injection. Skip silently; the rest of
+      // the scan pipeline already covers the DOM-visible surface.
+    } finally {
+      if (bridge && bridge.parentNode) bridge.parentNode.removeChild(bridge);
+    }
+
+    if (!json) return;
+    let data;
+    try { data = JSON.parse(json); } catch (_) { return; }
+
+    // Reconstruct the standard help-center URL for each vendor when we
+    // have enough identifier to do so. These point at the vendor's public
+    // contact-form / knowledge-base entry; the user lands one click away
+    // from the real support channel, no chat-UI dance required.
+    const helpUrlForVendor = {
+      intercom:  (info) => info.app_id ? `https://intercom.help/${info.app_id}/` : null,
+      zendesk:   (info) => info.subdomain ? `https://${info.subdomain}.zendesk.com/hc` : null,
+      drift:     (info) => info.embed_id ? `https://app.drift.com/${info.embed_id}` : null,
+      crisp:     (info) => info.website_id ? `https://app.crisp.chat/website/${info.website_id}/` : null,
+      hubspot:   (info) => info.portal_id ? `https://app.hubspot.com/contacts/${info.portal_id}/` : "https://help.hubspot.com/",
+      tidio:     ()     => "https://www.tidio.com/contact/",
+      livechat:  (info) => info.license ? `https://my.livechatinc.com/agent/chats/${info.license}` : null,
+      tawk:      (info) => info.property_id ? `https://dashboard.tawk.to/login` : null,
+      freshchat: (info) => info.host ? `https://${info.host}/` : null,
+      olark:     (info) => info.site_id ? `https://www.olark.com/site/${info.site_id}/contact` : null,
+    };
+
+    const labelForVendor = {
+      intercom: "Intercom help center",
+      zendesk: "Zendesk help center",
+      drift: "Drift contact",
+      crisp: "Crisp help center",
+      hubspot: "HubSpot help",
+      tidio: "Tidio contact",
+      livechat: "LiveChat",
+      tawk: "Tawk.to contact",
+      freshchat: "Freshchat host",
+      olark: "Olark contact",
+    };
+
+    Object.keys(data).forEach((vendor) => {
+      const info = data[vendor] || {};
+
+      // Direct email exposed in the chatbot config. Rare but very high
+      // confidence -- the SDK only gets this value when the admin
+      // explicitly set it as the fallback support address.
+      if (info.email && typeof info.email === "string" && info.email.includes("@")) {
+        const email = trimDigitPrefixBleed(info.email.toLowerCase());
+        if (!seen.has(email)) {
+          seen.add(email);
+          const context = `${vendor} chatbot config`;
+          results.emails.push({
+            value: email,
+            context,
+            // +15 over the base score: chatbot-config emails are explicitly
+            // set by site admins as the contact address, so they outrank
+            // generic free-text matches.
+            score: Math.min(100, scoreEmail(email, context) + 15),
+            source: `chatbot:${vendor}`,
+          });
+        }
+      }
+
+      // Direct phone (uncommon in widget configs, but check anyway).
+      if (info.phone && typeof info.phone === "string") {
+        const phoneRaw = info.phone.replace(/\s/g, "");
+        const key = phoneKey(phoneRaw);
+        if (key && key.length >= 10 && !seen.has(key)) {
+          seen.add(key);
+          const context = `${vendor} chatbot config`;
+          results.phones.push({
+            value: formatPhone(phoneRaw),
+            context,
+            score: 95,
+            source: `chatbot:${vendor}`,
+          });
+        }
+      }
+
+      // Help-center URL: push into results.links so the side panel's
+      // "Support pages" section surfaces it alongside /contact and /support.
+      const builder = helpUrlForVendor[vendor];
+      const url = builder ? builder(info) : null;
+      if (url && !seen.has(url)) {
+        seen.add(url);
+        results.links.push({
+          url,
+          text: labelForVendor[vendor] || vendor,
+          source: `chatbot:${vendor}`,
+        });
+      }
     });
   }
 
