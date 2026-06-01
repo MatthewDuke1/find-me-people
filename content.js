@@ -194,6 +194,12 @@
     // interacting with the chat UI.
     scanChatbotVendors(results, seen);
 
+    // 4d. Scan curated page-level metadata for contacts -- Open Graph
+    // business properties, IndieWeb rel=me links, Facebook business
+    // contact tags, reply-to and author meta. These are author-curated
+    // signals so any contact found here is high-confidence.
+    scanPageMeta(results, seen);
+
     // 5. Scan for hours of operation
     extractHours(results, hoursSeen);
 
@@ -663,6 +669,88 @@
         });
       }
     });
+  }
+
+  // Scan curated page-level metadata for contacts. Every signal in here is
+  // explicitly declared by the page author -- Open Graph, IndieWeb
+  // rel=me, Facebook business contact properties, traditional <meta>
+  // hints. Any contact we find via this path is high-confidence because
+  // it was put there deliberately, not extracted from prose.
+  //
+  // Sources checked:
+  //   - <meta property="og:email">                         (Open Graph)
+  //   - <meta property="business:contact_data:email">      (Facebook)
+  //   - <meta property="business:contact_data:phone_number"> (Facebook)
+  //   - <meta name="contact"> / <meta name="reply-to">     (legacy)
+  //   - <meta name="author" content="mailto:...">           (uncommon)
+  //   - <link rel="me" href="mailto:..." / "tel:...">      (IndieWeb)
+  //   - <link rel="author" href="mailto:...">              (HTML spec)
+  function scanPageMeta(results, seen) {
+    const META_EMAIL_KEYS = new Set([
+      "og:email", "business:contact_data:email",
+      "contact", "reply-to", "email",
+    ]);
+    const META_PHONE_KEYS = new Set([
+      "business:contact_data:phone_number", "business:contact_data:phone",
+      "phone", "telephone",
+    ]);
+    const META_MAYBE_EMAIL_KEYS = new Set(["author"]); // content may be "Name <a@b.com>" or "mailto:..."
+
+    const pushEmail = (raw) => {
+      if (!raw || typeof raw !== "string") return;
+      // strip mailto: prefix and any "?subject=..." tail
+      let val = raw.replace(/^\s*mailto:/i, "").split("?")[0].trim().toLowerCase();
+      const m = val.match(EMAIL_REGEX);
+      if (!m) return;
+      const email = trimDigitPrefixBleed(m[0]);
+      if (seen.has(email)) return;
+      seen.add(email);
+      const ctx = "page meta";
+      results.emails.push({
+        value: email,
+        context: ctx,
+        // +15 over scoreEmail floor: author-declared meta is the
+        // strongest non-mailto signal we have.
+        score: Math.min(100, scoreEmail(email, ctx) + 15),
+        source: "meta",
+      });
+    };
+
+    const pushPhone = (raw) => {
+      if (!raw || typeof raw !== "string") return;
+      const val = raw.replace(/^\s*tel:/i, "").trim();
+      const cleaned = val.replace(/[^\d+]/g, "");
+      if (cleaned.length < 10 || cleaned.length > 15) return;
+      const key = phoneKey(cleaned);
+      if (seen.has(key)) return;
+      seen.add(key);
+      const ctx = "page meta";
+      results.phones.push({
+        value: formatPhone(val),
+        context: ctx,
+        score: 98,
+        source: "meta",
+      });
+    };
+
+    try {
+      document.querySelectorAll("meta[name], meta[property]").forEach((el) => {
+        const key = (el.getAttribute("property") || el.getAttribute("name") || "").toLowerCase();
+        const content = el.getAttribute("content") || "";
+        if (!key || !content) return;
+        if (META_EMAIL_KEYS.has(key)) pushEmail(content);
+        else if (META_PHONE_KEYS.has(key)) pushPhone(content);
+        else if (META_MAYBE_EMAIL_KEYS.has(key) && /@/.test(content)) pushEmail(content);
+      });
+    } catch (_) {}
+
+    try {
+      document.querySelectorAll('link[rel="me"], link[rel="author"]').forEach((el) => {
+        const href = el.getAttribute("href") || "";
+        if (/^mailto:/i.test(href)) pushEmail(href);
+        else if (/^tel:/i.test(href)) pushPhone(href);
+      });
+    } catch (_) {}
   }
 
   // Walk every iframe on the page; for any that is same-origin (i.e. we can
