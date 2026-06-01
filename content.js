@@ -92,10 +92,23 @@
     });
 
     // 2. Scan contact-likely sections
+    //
+    // innerText (not textContent) so block-level boundaries -- paragraphs,
+    // divs, <br>, list items -- produce whitespace in the joined string.
+    // textContent ignores layout and concatenates adjacent block elements
+    // with no separator, which caused emails to merge with the preceding
+    // line's content: <span>...TX 77546</span><br></p><div>...email...</div>
+    // would join as "...TX 77546email..." and the email regex would
+    // happily match "77546email@host" as one address. innerText respects
+    // the layout so the join becomes "...TX 77546\nemail...".
+    //
+    // The cost is a forced layout per matched container. CONTACT_SELECTORS
+    // is short and only matches a handful of elements per page, so the
+    // perf hit is bounded.
     CONTACT_SELECTORS.forEach((selector) => {
       try {
         document.querySelectorAll(selector).forEach((el) => {
-          const text = el.textContent || "";
+          const text = el.innerText || el.textContent || "";
           extractFromText(text, el, results, seen);
         });
       } catch (e) {}
@@ -365,7 +378,7 @@
     // Run the same regexes the DOM-text scan uses, against the JSON string.
     const emailMatches = json.match(EMAIL_REGEX) || [];
     emailMatches.forEach((email) => {
-      email = email.toLowerCase();
+      email = trimDigitPrefixBleed(email.toLowerCase());
       if (seen.has(email)) return;
       // Filter out obvious noise that shows up in __NEXT_DATA__ blobs
       if (
@@ -407,11 +420,27 @@
     });
   }
 
+  // Strip a leading run of 5+ digits-then-letter from an email's local part.
+  // That shape is almost always cross-element DOM bleed where text from a
+  // sibling node (zip code, postal code, phone digits, order ID) got glued
+  // to the start of the real local part because the join produced no
+  // whitespace -- typically when innerText is unavailable or when two
+  // inline elements sit immediately adjacent. Real local parts that start
+  // with 5+ digits before a letter are vanishingly rare; the bleed cases
+  // are common (US 5-digit zips, 6-digit postal codes, account numbers).
+  //
+  // Conservative threshold: 5 digits minimum. "123support@x.com" stays as
+  // is; "77546thesanctuarygymtx@outlook.com" becomes
+  // "thesanctuarygymtx@outlook.com".
+  function trimDigitPrefixBleed(email) {
+    return email.replace(/^\d{5,}(?=[a-z])/, "");
+  }
+
   function extractFromText(text, parentEl, results, seen) {
     // Emails
     const emailMatches = text.match(EMAIL_REGEX) || [];
     emailMatches.forEach((email) => {
-      email = email.toLowerCase();
+      email = trimDigitPrefixBleed(email.toLowerCase());
       if (
         !seen.has(email) &&
         !email.endsWith(".png") &&
