@@ -47,6 +47,13 @@ The result: reaching a real human for help has become a skill, not a right.
 
 ## Changelog
 
+### 1.5.1 -- 2026-05-30
+
+Side panel feature parity + a scroll-position bug fix. The pull-tab panel now offers the same surface the toolbar popup does, and stays put while you scroll it.
+
+- **Side panel feature parity with the toolbar popup.** Five capabilities the popup had that the side panel was missing, now bundled together: a "Rate Find Me People" footer link (browser-aware: Firefox -> AMO, Chromium -> Chrome Web Store /reviews), a manual "Rescan" footer button (covers the rare cases the `MutationObserver` debounce misses), a top-of-panel hours banner that reads the page's structured/schema/microdata opening hours and labels Open / Closed / Unknown with a status dot, a Support pages section listing every contact-adjacent link the scan surfaced (Contact / Support / Help / FAQ etc.) so they survive across the Now / History view tabs, and a History tab inside the panel that mirrors the popup's history list with the same `chrome.storage.local.fmp_history` key and entry shape.
+- **Bug fix: side panel no longer bounces to the top while you scroll.** The auto-rescan `MutationObserver` was rebuilding the panel's shadow DOM every ~1s on active pages (lazy images, sticky headers, infinite-scroll feeds all trigger it), throwing away the `.scroll` element along with its `scrollTop`. The re-render path now snapshots scroll position alongside the existing `wasExpanded` / `wasOpenRows` state and restores it after the rebuild, so mid-scroll users stay where they are.
+
 ### 1.4.0 -- 2026-05-10
 
 New surface release. Most users never click the toolbar icon -- the side panel makes contacts discoverable inline on every page.
