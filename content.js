@@ -71,6 +71,17 @@
     const seen = new Set();
     const hoursSeen = new Set();
 
+    // 0. Seed the dedup set with the user's own logged-in identity (email /
+    //    phone surfaced by account dropdowns, profile menus, signed-in
+    //    avatars, account-switcher UIs). The user cannot "contact themselves"
+    //    -- surfacing their own gmail/outlook address on a Google search
+    //    results page (or any logged-in app) is a false-positive that erodes
+    //    trust in the rest of the results. By pre-seeding `seen`, every
+    //    downstream push site (mailto:, text scan, body innerText, iframes,
+    //    fallback fetch, page globals, chatbot configs) naturally skips the
+    //    personal identifier without any additional code at each call site.
+    seedPersonalIdentity(seen);
+
     // 1. Scan mailto: and tel: links (highest confidence)
     document.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
       const email = el.href.replace("mailto:", "").split("?")[0].toLowerCase();
@@ -850,6 +861,94 @@
           source: "text",
         });
       }
+    });
+  }
+
+  // Identify the user's own logged-in identity (email / phone) from the
+  // page's signed-in account UI, and add it to the dedup `seen` set so it
+  // never gets surfaced as a "contact." Surfacing the user's own avatar
+  // email on a Google search page (or any logged-in app) is a false
+  // positive: the user cannot contact themselves.
+  //
+  // Two passes:
+  //
+  //   A. ARIA-LABEL / TITLE PATTERN MATCH
+  //      Web apps almost universally label the signed-in-user avatar /
+  //      account dropdown with text like "Google Account: <Name>
+  //      (<email>)" or "Signed in as <email>." If an element's
+  //      aria-label or title contains one of those patterns AND also
+  //      contains an email, we treat that email as personal.
+  //
+  //   B. ACCOUNT-DROPDOWN STRUCTURAL SELECTORS
+  //      Some apps render the email as visible text inside an element
+  //      with class/id/data-testid markers like "account-menu",
+  //      "user-menu", "avatar", "profile-menu". We pull any email and
+  //      phone out of those elements' innerText and treat them as
+  //      personal.
+  //
+  // The patterns are tight enough that legitimate support emails on a
+  // contact page (e.g. "Contact our account team at...") don't get
+  // dropped: those won't appear inside an aria-label that literally
+  // starts "<vendor> Account:" and won't be inside an element whose
+  // class is "user-menu" or similar.
+  function seedPersonalIdentity(seen) {
+    const ACCOUNT_LABEL_PATTERNS = [
+      /\b(?:google|microsoft|apple|outlook|yahoo|aol|icloud|github|gitlab|linkedin|atlassian|slack|notion|adobe|spotify|dropbox|figma|amazon|twitter|facebook|instagram)\s+account[:\s]/i,
+      /\bsigned\s+in\s+as\b/i,
+      /\bswitch\s+(?:to\s+(?:another\s+)?)?account\b/i,
+      /\bmanage\s+your\s+(?:google\s+)?account\b/i,
+      /\byour\s+\w+\s+account\b/i,
+      /\byou(?:'re|\s+are)\s+signed\s+in\b/i,
+    ];
+
+    const ACCOUNT_STRUCTURAL_SELECTORS = [
+      '[class*="account-menu"]',  '[id*="account-menu"]',
+      '[class*="user-menu"]',     '[id*="user-menu"]',
+      '[class*="profile-menu"]',  '[id*="profile-menu"]',
+      '[class*="account-info"]',  '[class*="user-info"]',
+      '[class*="avatar"]',
+      '[data-testid*="user-menu"]',  '[data-testid*="account-menu"]',
+      '[data-testid*="profile-menu"]',
+      '[aria-label*="account menu" i]', '[aria-label*="profile menu" i]',
+      '[aria-label*="user menu" i]',
+    ];
+
+    const seedFromText = (text) => {
+      if (!text) return;
+      (text.match(EMAIL_REGEX) || []).forEach((e) => seen.add(e.toLowerCase()));
+      const phones = [
+        ...(text.match(PHONE_REGEX) || []),
+        ...(text.match(INTL_PHONE_REGEX) || []),
+      ];
+      phones.forEach((p) => {
+        const cleaned = p.replace(/[^\d+]/g, "");
+        if (cleaned.length >= 10 && cleaned.length <= 15) {
+          seen.add(phoneKey(cleaned));
+        }
+      });
+    };
+
+    // Pass A: aria-label / title text matching one of the account patterns.
+    try {
+      document.querySelectorAll("[aria-label], [title]").forEach((el) => {
+        const label = (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("title") || "");
+        if (!label || !/@/.test(label)) return;
+        if (!ACCOUNT_LABEL_PATTERNS.some((p) => p.test(label))) return;
+        seedFromText(label);
+      });
+    } catch (_) {}
+
+    // Pass B: structural selectors. Read the element's innerText (respects
+    // layout, so screen-reader-only divs that visually-hidden but still
+    // rendered are picked up) and seed any contacts found inside.
+    ACCOUNT_STRUCTURAL_SELECTORS.forEach((sel) => {
+      try {
+        document.querySelectorAll(sel).forEach((el) => {
+          const text = (el.innerText || el.textContent || "");
+          if (!text || !/@|\d{3}/.test(text)) return;
+          seedFromText(text);
+        });
+      } catch (_) {}
     });
   }
 
