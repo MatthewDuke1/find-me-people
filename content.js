@@ -2651,8 +2651,175 @@
     return raw.replace(/\s+/g, " ");
   }
 
+  // ====================================================================
+  // PER-DOMAIN RESULT CACHE
+  //
+  // chrome.storage.local-backed cache of scan results keyed by hostname.
+  // When the user revisits a domain we've recently scanned, hydrate the
+  // results object immediately from cache so the side panel and popup
+  // show contacts within ~50 ms instead of waiting for the live scan,
+  // background fetches, and Zendesk/Freshdesk/Crisp KB queries to all
+  // resolve.
+  //
+  // The live scan still runs in parallel. When it finishes, fresh
+  // contacts are merged on top of the cached values via the same
+  // canonical dedup helpers used everywhere else (so duplicates
+  // collapse), the cache entry is updated with the merged result, and
+  // the side panel is re-rendered to reflect anything new.
+  //
+  // Bounding:
+  //   - TTL: 1 hour. Long enough to make repeat visits during a session
+  //     feel instant; short enough that contacts the company removes
+  //     stop appearing within the same browsing day.
+  //   - One entry per hostname (stripped of "www.").
+  //   - Storage cap: keep the 50 most-recently-written entries; on cache
+  //     write, evict the oldest. Each entry is small (typically a few KB
+  //     of JSON), so the total footprint stays well under
+  //     chrome.storage.local's 5 MB quota.
+  //   - Cache is local-only. Never transmitted, never synced.
+  // ====================================================================
+  const FMP_CACHE_KEY = "fmp_scan_cache_v1";
+  const FMP_CACHE_TTL_MS = 60 * 60 * 1000;
+  const FMP_CACHE_MAX_ENTRIES = 50;
+
+  function fmpCacheHostKey() {
+    try {
+      return (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
+    } catch (_) { return ""; }
+  }
+
+  function fmpCacheRead() {
+    return new Promise((resolve) => {
+      if (!chrome.storage || !chrome.storage.local) return resolve(null);
+      try {
+        chrome.storage.local.get([FMP_CACHE_KEY], (r) => {
+          const map = (r && r[FMP_CACHE_KEY]) || {};
+          const host = fmpCacheHostKey();
+          if (!host || !map[host]) return resolve(null);
+          const entry = map[host];
+          if (!entry || typeof entry.savedAt !== "number") return resolve(null);
+          if (Date.now() - entry.savedAt > FMP_CACHE_TTL_MS) return resolve(null);
+          resolve(entry.results || null);
+        });
+      } catch (_) {
+        resolve(null);
+      }
+    });
+  }
+
+  function fmpCacheWrite(results) {
+    if (!chrome.storage || !chrome.storage.local) return;
+    const host = fmpCacheHostKey();
+    if (!host) return;
+    // Only cache substantive results -- empty pages would waste space.
+    const total = (results.emails || []).length + (results.phones || []).length;
+    if (total === 0) return;
+    try {
+      chrome.storage.local.get([FMP_CACHE_KEY], (r) => {
+        const map = (r && r[FMP_CACHE_KEY]) || {};
+        map[host] = {
+          savedAt: Date.now(),
+          results: {
+            emails: results.emails || [],
+            phones: results.phones || [],
+            links: results.links || [],
+            hours: results.hours || [],
+            context: results.context || [],
+          },
+        };
+        // Evict oldest if over cap
+        const keys = Object.keys(map);
+        if (keys.length > FMP_CACHE_MAX_ENTRIES) {
+          keys.sort((a, b) => (map[a].savedAt || 0) - (map[b].savedAt || 0));
+          const toDrop = keys.slice(0, keys.length - FMP_CACHE_MAX_ENTRIES);
+          toDrop.forEach((k) => { delete map[k]; });
+        }
+        chrome.storage.local.set({ [FMP_CACHE_KEY]: map });
+      });
+    } catch (_) {}
+  }
+
+  // Merge cached results into the live results object using the same
+  // canonical dedup the scan paths use. Cached entries that already
+  // exist in live results (via phoneKey, lowercase email, or URL
+  // string) are skipped; new ones get pushed with a "cached" source
+  // tag suffix preserved if present.
+  function fmpMergeCachedIntoResults(cached, results, seen) {
+    if (!cached) return 0;
+    let added = 0;
+    (cached.emails || []).forEach((e) => {
+      const key = (e.value || "").toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      results.emails.push(e);
+      added++;
+    });
+    (cached.phones || []).forEach((p) => {
+      const cleaned = String(p.value || "").replace(/[^\d+]/g, "");
+      const key = phoneKey(cleaned);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      results.phones.push(p);
+      added++;
+    });
+    (cached.links || []).forEach((l) => {
+      if (!l || !l.url || seen.has(l.url)) return;
+      seen.add(l.url);
+      results.links.push(l);
+    });
+    (cached.hours || []).forEach((h) => {
+      results.hours.push(h);
+    });
+    if (added > 0) {
+      results.emails.sort((a, b) => b.score - a.score);
+      results.phones.sort((a, b) => b.score - a.score);
+    }
+    return added;
+  }
+
   // Run scan and store results
   const results = scanPage();
+
+  // Hydrate from cache (background -- doesn't block the synchronous
+  // scanPage above). When the cached entry is fresh (TTL not expired)
+  // and the live scan didn't already find the same items, the cached
+  // contacts merge in and the side panel re-renders. If the live scan
+  // already had everything cached, nothing visible changes.
+  fmpCacheRead().then((cached) => {
+    if (!cached) return;
+    const cacheSeen = new Set();
+    results.emails.forEach((e) => cacheSeen.add((e.value || "").toLowerCase()));
+    results.phones.forEach((p) => {
+      const cleaned = String(p.value || "").replace(/[^\d+]/g, "");
+      cacheSeen.add(phoneKey(cleaned));
+    });
+    results.links.forEach((l) => l && l.url && cacheSeen.add(l.url));
+    const added = fmpMergeCachedIntoResults(cached, results, cacheSeen);
+    if (added > 0) {
+      // Re-render the side panel to show the hydrated contacts.
+      try { ensureSidePanel(results); } catch (_) {}
+      // Bump the toolbar badge to match.
+      const total = results.emails.length + results.phones.length;
+      try {
+        chrome.runtime.sendMessage({ action: "updateBadge", count: total }).catch(() => {});
+      } catch (_) {}
+    }
+  });
+
+  // Save scan results to cache after a short settle (give the async
+  // background fetches a chance to populate). Uses requestIdleCallback
+  // when available; otherwise a 3-second timeout.
+  function fmpScheduleCacheWrite() {
+    const writer = () => {
+      try { fmpCacheWrite(results); } catch (_) {}
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(writer, { timeout: 5000 });
+    } else {
+      setTimeout(writer, 3000);
+    }
+  }
+  fmpScheduleCacheWrite();
 
   // Listen for popup requests
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
