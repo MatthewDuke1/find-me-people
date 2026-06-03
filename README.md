@@ -1,6 +1,6 @@
 # Find Me People
 
-A browser extension that instantly finds customer service emails and phone numbers on any website. Because companies are making it harder to reach a human -- we make it easier.
+A browser extension that bypasses chatbots and surfaces the real customer service emails and phone numbers companies hide behind support widgets. It detects chatbot vendors (Intercom, Zendesk, Drift, Crisp, HubSpot, Tidio, LiveChat, Tawk, Freshchat, Olark) and reads the same public knowledge base the chatbot was trained on -- no chat-UI dance, no account, 100% local.
 
 > **Cross-browser:** a single Manifest V3 codebase that installs in both Chrome and Firefox (Firefox 121+).
 

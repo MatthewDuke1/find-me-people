@@ -35,9 +35,25 @@
     '[aria-label*="contact"]', '[aria-label*="support"]',
   ];
 
-  // Pages likely to have contact info
+  // URL patterns that indicate a page is likely to carry contact info.
+  // Boundary-aware: matches "contact" / "contacts" only when adjacent to
+  // a path separator (-, _, /, or end-of-string). The previous /\/contact/i
+  // pattern required a literal "/contact" prefix and missed real contact
+  // pages like /media-contacts and /direct-contact-information that show
+  // up on government and large-org sites (dhs.gov, irs.gov, etc.).
+  //
+  // Examples that match:
+  //   /contact, /contact-us, /contacts, /contacts/, /contact_us
+  //   /media-contacts, /press-contacts, /staff-contacts
+  //   /direct-contact-information, /general-contact-info
+  //   /press, /press-room (often carries media-facing contacts)
+  //
+  // Examples that do NOT match (avoid false positives):
+  //   /contactless-payment, /non-contactable-resources
   const CONTACT_PAGE_PATTERNS = [
-    /\/contact/i, /\/support/i, /\/help/i, /\/about/i,
+    /[-_\/]contacts?(?:[-_\/]|$)/i,
+    /[-_\/]press(?:[-_\/]|$)/i,
+    /\/support/i, /\/help/i, /\/about/i,
     /\/customer-service/i, /\/get-in-touch/i, /\/reach-us/i,
   ];
 
@@ -70,6 +86,17 @@
     const results = { emails: [], phones: [], links: [], context: [], hours: [] };
     const seen = new Set();
     const hoursSeen = new Set();
+
+    // 0. Seed the dedup set with the user's own logged-in identity (email /
+    //    phone surfaced by account dropdowns, profile menus, signed-in
+    //    avatars, account-switcher UIs). The user cannot "contact themselves"
+    //    -- surfacing their own gmail/outlook address on a Google search
+    //    results page (or any logged-in app) is a false-positive that erodes
+    //    trust in the rest of the results. By pre-seeding `seen`, every
+    //    downstream push site (mailto:, text scan, body innerText, iframes,
+    //    fallback fetch, page globals, chatbot configs) naturally skips the
+    //    personal identifier without any additional code at each call site.
+    seedPersonalIdentity(seen);
 
     // 1. Scan mailto: and tel: links (highest confidence)
     document.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
@@ -115,9 +142,14 @@
       } catch (e) {}
     });
 
-    // 3. Scan the full page body for remaining matches
+    // 3. Scan the full page body for remaining matches. Loose-body scope:
+    // require a per-phone contact-proximity anchor so we don't dump every
+    // snippet phone on a Google search results page (or any directory /
+    // listing / social feed) into the side panel. Emails are unaffected --
+    // their @ symbol makes them distinct enough that the noise pattern
+    // doesn't appear in practice.
     const bodyText = document.body ? document.body.innerText : "";
-    extractFromText(bodyText, document.body, results, seen);
+    extractFromText(bodyText, document.body, results, seen, { requireProximityAnchor: true });
 
     // 3b. Scan same-origin iframes. Sites that embed contact widgets,
     // support chat panels, or "contact us" forms via iframe on their own
@@ -152,6 +184,31 @@
     // Wappalyzer uses for tech fingerprinting.
     scanPageGlobals(results, seen);
 
+    // 4c. Detect chatbot widgets and read their config globals. When a
+    // company hides its real support email behind an Intercom / Zendesk /
+    // Drift / Crisp / HubSpot / Tidio / LiveChat / Tawk / Freshchat / Olark
+    // widget, the widget's SDK still stashes config on `window` -- account
+    // ID, sometimes a support email, often enough to reconstruct the
+    // vendor's contact / help-center URL. Pulling from those globals turns
+    // a chatbot into a discoverable contact channel without us ever
+    // interacting with the chat UI.
+    scanChatbotVendors(results, seen);
+
+    // 4d. Scan curated page-level metadata for contacts.
+    scanPageMeta(results, seen);
+
+    // 4e. Press-release / media-contact extraction.
+    scanPressContacts(results, seen);
+
+    // 4f. App Store / Play Store developer contacts.
+    scanAppStorePages(results, seen);
+
+    // 4g. Footer-specialized pass.
+    scanFooterSpecialized(results, seen);
+
+    // 4h. Site-specific override library.
+    applySiteOverrides(results, seen);
+
     // 5. Scan for hours of operation
     extractHours(results, hoursSeen);
 
@@ -168,10 +225,36 @@
       return true;
     });
 
-    // 6. Fallback: if the in-DOM scan came up totally empty, fire a
-    // fire-and-forget background fetch of common same-origin contact
-    // pages (/contact, /about, /support) and merge any matches into
-    // results in place. Bounded to once per origin per session.
+    // 6. Background-fetch every same-origin contact-page link we found in
+    // step 4. Government and large-org sites surface multiple specialized
+    // contact pages (dhs.gov has /contact AND /media-contacts AND
+    // /direct-contact-information, each with its own contact info). The
+    // user shouldn't have to click each one -- we fetch all of them,
+    // parse, and merge. Bounded to 5 fetches per scan, per-URL
+    // sessionStorage gate, same-origin only, credentials: 'same-origin'
+    // (so cookie-gated content like Cloudflare's cf_clearance pages is
+    // reachable -- same cookies the user already sends when they click
+    // the link manually).
+    const discoveredContactUrls = (results.links || [])
+      .map((l) => l && l.url)
+      .filter((u) => {
+        if (!u || typeof u !== "string") return false;
+        try {
+          const parsed = new URL(u);
+          return parsed.origin === window.location.origin
+              && CONTACT_PAGE_PATTERNS.some((p) => p.test(parsed.pathname));
+        } catch (_) {
+          return false;
+        }
+      });
+    if (discoveredContactUrls.length) {
+      fetchDiscoveredContactPages(discoveredContactUrls, results, seen);
+    }
+
+    // 7. Fallback: if the in-DOM scan AND the discovered-page fetch came
+    // up totally empty, fire a fire-and-forget background fetch of a
+    // hardcoded list of common contact paths (/contact, /about, /support)
+    // and merge any matches. Bounded to once per origin per session.
     if (results.emails.length + results.phones.length === 0) {
       fetchAndScanFallbackPages(results, seen);
     }
@@ -448,6 +531,865 @@
     });
   }
 
+  // Detect chatbot vendors and read their config globals.
+  //
+  // Every major chat widget loads a JS SDK that stashes its config on
+  // `window` before the widget iframe renders. The widget itself sits in a
+  // cross-origin iframe we can't read, but its config (account ID, support
+  // email, sometimes a fallback phone, help-center URL) lives in the host
+  // page's JS context -- same place __NEXT_DATA__ lives. Same page-world
+  // bridge pattern scanPageGlobals uses: inject a tiny <script>, serialize
+  // the targets onto a hidden DOM bridge, read back, clean up.
+  //
+  // For each detected vendor we extract:
+  //   1. Any email/phone directly exposed in the config (rare but very
+  //      high-confidence -- chatbot config emails are almost always the
+  //      real support address).
+  //   2. The vendor account identifier (app_id / subdomain / website_id /
+  //      portal_id / license / token) which we use to reconstruct the
+  //      vendor's standard help-center URL. That URL gets pushed into
+  //      results.links so the side panel surfaces it under "Support pages"
+  //      -- one click away from the real contact form.
+  //
+  // No interaction with the chat UI itself. We don't type into it, we
+  // don't open it, we don't bypass the vendor's flow. This is passive
+  // scanning, exactly the same risk profile as scanPageGlobals.
+  function scanChatbotVendors(results, seen) {
+    if (!document.body) return;
+
+    let bridge;
+    let json = "";
+    try {
+      bridge = document.createElement("div");
+      bridge.id = "fmp-chatbot-bridge";
+      bridge.style.display = "none";
+      document.body.appendChild(bridge);
+
+      const script = document.createElement("script");
+      // Single self-executing IIFE: probe each vendor's window globals and
+      // any related script[src] / iframe[src] markers, serialize the bits
+      // we want, stash on bridge. Kept inline for the same CSP-tolerance
+      // reason as the scanPageGlobals injection -- one script element only.
+      script.textContent =
+        "(function(){try{var d={};" +
+        // Intercom: intercomSettings.app_id, email_support_address.
+        "try{var ic=window.intercomSettings;if(ic||window.Intercom){d.intercom={app_id:(ic&&ic.app_id)||null,email:(ic&&(ic.email_support_address||ic.support_email))||null};}}catch(e){}" +
+        // Zendesk: detected via globals; subdomain pulled from snippet src.
+        "try{if(window.zESettings||window.zE||window.zEACLoaded){var sub=null;var ss=document.querySelectorAll('script[src*=\"zdassets\"],script[src*=\"zendesk\"]');for(var i=0;i<ss.length;i++){var u=ss[i].src||'';var m=u.match(/static\\.zdassets\\.com\\/ekr\\/[^?]+\\?key=([a-z0-9-]+)/);if(m){sub=m[1];break;}var m2=u.match(/\\/\\/([a-z0-9-]+)\\.zendesk\\.com/);if(m2){sub=m2[1];break;}}d.zendesk={subdomain:sub};}}catch(e){}" +
+        // Drift: drift / driftt globals. embedId is the widget account.
+        "try{var dr=window.drift||window.driftt;if(dr){var eid=null;try{eid=(dr.api&&dr.api.embedId)||(dr.api&&dr.api.params&&dr.api.params.embedId)||null;}catch(e){}d.drift={embed_id:eid};}}catch(e){}" +
+        // Crisp: CRISP_WEBSITE_ID is the workspace UUID.
+        "try{if(window.CRISP_WEBSITE_ID||window.$crisp){d.crisp={website_id:window.CRISP_WEBSITE_ID||null};}}catch(e){}" +
+        // HubSpot: portal id from hbspt or first _hsq queue item.
+        "try{if(window._hsq||window.hbspt||window.HubSpotConversations){var pid=null;try{if(window.hbspt&&window.hbspt.portal&&window.hbspt.portal.id)pid=window.hbspt.portal.id;}catch(e){}if(!pid&&window._hsq&&window._hsq.length){for(var j=0;j<window._hsq.length;j++){var it=window._hsq[j];if(it&&it[1]&&it[1].portalId){pid=it[1].portalId;break;}}}d.hubspot={portal_id:pid};}}catch(e){}" +
+        // Tidio: project key only exposed via tidioIdentify in some integrations.
+        "try{if(window.tidioChatApi||window.tidioIdentify){d.tidio={detected:true};}}catch(e){}" +
+        // LiveChat: license number.
+        "try{var lc=window.__lc;if(lc||window.LC_API){d.livechat={license:(lc&&lc.license)||null};}}catch(e){}" +
+        // Tawk.to: property id surfaced via script src embed/<propertyId>/<widgetId>.
+        "try{if(window.Tawk_API||window.Tawk_LoadStart){var tprop=null;var tss=document.querySelectorAll('script[src*=\"tawk.to\"]');for(var k=0;k<tss.length;k++){var tu=tss[k].src||'';var tm=tu.match(/embed\\.tawk\\.to\\/([a-f0-9]+)\\/[a-z0-9]+/i);if(tm){tprop=tm[1];break;}}d.tawk={property_id:tprop};}}catch(e){}" +
+        // Freshchat: token + host.
+        "try{var fs=window.fcSettings;if(fs||window.fcWidget){d.freshchat={token:(fs&&fs.token)||null,host:(fs&&fs.host)||null};}}catch(e){}" +
+        // Olark: siteId in olark.configuration.
+        "try{if(window.olark){var sid=null;try{sid=(window.olark.configuration&&window.olark.configuration.siteId)||null;}catch(e){}d.olark={site_id:sid};}}catch(e){}" +
+        // Serialize with the same WeakSet-cycle-guard pattern as scanPageGlobals.
+        "var sn=new WeakSet();var rp=function(k,v){if(v&&typeof v==='object'){if(sn.has(v))return undefined;sn.add(v);}if(typeof v==='function')return undefined;if(v&&v.nodeType)return undefined;return v;};var s='';try{s=JSON.stringify(d,rp);}catch(e){}if(s&&s.length>50000)s=s.substring(0,50000);var el=document.getElementById('fmp-chatbot-bridge');if(el)el.setAttribute('data-chatbot',s||'');}catch(e){}})();";
+      document.documentElement.appendChild(script);
+      if (script.parentNode) script.parentNode.removeChild(script);
+
+      json = bridge.getAttribute("data-chatbot") || "";
+    } catch (_) {
+      // Strict-CSP sites block the injection. Skip silently; the rest of
+      // the scan pipeline already covers the DOM-visible surface.
+    } finally {
+      if (bridge && bridge.parentNode) bridge.parentNode.removeChild(bridge);
+    }
+
+    if (!json) return;
+    let data;
+    try { data = JSON.parse(json); } catch (_) { return; }
+
+    // Reconstruct the standard help-center URL for each vendor when we
+    // have enough identifier to do so. These point at the vendor's public
+    // contact-form / knowledge-base entry; the user lands one click away
+    // from the real support channel, no chat-UI dance required.
+    const helpUrlForVendor = {
+      intercom:  (info) => info.app_id ? `https://intercom.help/${info.app_id}/` : null,
+      zendesk:   (info) => info.subdomain ? `https://${info.subdomain}.zendesk.com/hc` : null,
+      drift:     (info) => info.embed_id ? `https://app.drift.com/${info.embed_id}` : null,
+      crisp:     (info) => info.website_id ? `https://app.crisp.chat/website/${info.website_id}/` : null,
+      hubspot:   (info) => info.portal_id ? `https://app.hubspot.com/contacts/${info.portal_id}/` : "https://help.hubspot.com/",
+      tidio:     ()     => "https://www.tidio.com/contact/",
+      livechat:  (info) => info.license ? `https://my.livechatinc.com/agent/chats/${info.license}` : null,
+      tawk:      (info) => info.property_id ? `https://dashboard.tawk.to/login` : null,
+      freshchat: (info) => info.host ? `https://${info.host}/` : null,
+      olark:     (info) => info.site_id ? `https://www.olark.com/site/${info.site_id}/contact` : null,
+    };
+
+    const labelForVendor = {
+      intercom: "Intercom help center",
+      zendesk: "Zendesk help center",
+      drift: "Drift contact",
+      crisp: "Crisp help center",
+      hubspot: "HubSpot help",
+      tidio: "Tidio contact",
+      livechat: "LiveChat",
+      tawk: "Tawk.to contact",
+      freshchat: "Freshchat host",
+      olark: "Olark contact",
+    };
+
+    Object.keys(data).forEach((vendor) => {
+      const info = data[vendor] || {};
+
+      // Direct email exposed in the chatbot config. Rare but very high
+      // confidence -- the SDK only gets this value when the admin
+      // explicitly set it as the fallback support address.
+      if (info.email && typeof info.email === "string" && info.email.includes("@")) {
+        const email = trimDigitPrefixBleed(info.email.toLowerCase());
+        if (!seen.has(email)) {
+          seen.add(email);
+          const context = `${vendor} chatbot config`;
+          results.emails.push({
+            value: email,
+            context,
+            // +15 over the base score: chatbot-config emails are explicitly
+            // set by site admins as the contact address, so they outrank
+            // generic free-text matches.
+            score: Math.min(100, scoreEmail(email, context) + 15),
+            source: `chatbot:${vendor}`,
+          });
+        }
+      }
+
+      // Direct phone (uncommon in widget configs, but check anyway).
+      if (info.phone && typeof info.phone === "string") {
+        const phoneRaw = info.phone.replace(/\s/g, "");
+        const key = phoneKey(phoneRaw);
+        if (key && key.length >= 10 && !seen.has(key)) {
+          seen.add(key);
+          const context = `${vendor} chatbot config`;
+          results.phones.push({
+            value: formatPhone(phoneRaw),
+            context,
+            score: 95,
+            source: `chatbot:${vendor}`,
+          });
+        }
+      }
+
+      // Help-center URL: push into results.links so the side panel's
+      // "Support pages" section surfaces it alongside /contact and /support.
+      const builder = helpUrlForVendor[vendor];
+      const url = builder ? builder(info) : null;
+      if (url && !seen.has(url)) {
+        seen.add(url);
+        results.links.push({
+          url,
+          text: labelForVendor[vendor] || vendor,
+          source: `chatbot:${vendor}`,
+        });
+      }
+    });
+  }
+
+  // Scan curated page-level metadata for contacts. Every signal in here is
+  // explicitly declared by the page author -- Open Graph, IndieWeb
+  // rel=me, Facebook business contact properties, traditional <meta>
+  // hints. Any contact we find via this path is high-confidence because
+  // it was put there deliberately, not extracted from prose.
+  //
+  // Sources checked:
+  //   - <meta property="og:email">                         (Open Graph)
+  //   - <meta property="business:contact_data:email">      (Facebook)
+  //   - <meta property="business:contact_data:phone_number"> (Facebook)
+  //   - <meta name="contact"> / <meta name="reply-to">     (legacy)
+  //   - <meta name="author" content="mailto:...">           (uncommon)
+  //   - <link rel="me" href="mailto:..." / "tel:...">      (IndieWeb)
+  //   - <link rel="author" href="mailto:...">              (HTML spec)
+  function scanPageMeta(results, seen) {
+    const META_EMAIL_KEYS = new Set([
+      "og:email", "business:contact_data:email",
+      "contact", "reply-to", "email",
+    ]);
+    const META_PHONE_KEYS = new Set([
+      "business:contact_data:phone_number", "business:contact_data:phone",
+      "phone", "telephone",
+    ]);
+    const META_MAYBE_EMAIL_KEYS = new Set(["author"]); // content may be "Name <a@b.com>" or "mailto:..."
+
+    const pushEmail = (raw) => {
+      if (!raw || typeof raw !== "string") return;
+      // strip mailto: prefix and any "?subject=..." tail
+      let val = raw.replace(/^\s*mailto:/i, "").split("?")[0].trim().toLowerCase();
+      const m = val.match(EMAIL_REGEX);
+      if (!m) return;
+      const email = trimDigitPrefixBleed(m[0]);
+      if (seen.has(email)) return;
+      seen.add(email);
+      const ctx = "page meta";
+      results.emails.push({
+        value: email,
+        context: ctx,
+        // +15 over scoreEmail floor: author-declared meta is the
+        // strongest non-mailto signal we have.
+        score: Math.min(100, scoreEmail(email, ctx) + 15),
+        source: "meta",
+      });
+    };
+
+    const pushPhone = (raw) => {
+      if (!raw || typeof raw !== "string") return;
+      const val = raw.replace(/^\s*tel:/i, "").trim();
+      const cleaned = val.replace(/[^\d+]/g, "");
+      if (cleaned.length < 10 || cleaned.length > 15) return;
+      const key = phoneKey(cleaned);
+      if (seen.has(key)) return;
+      seen.add(key);
+      const ctx = "page meta";
+      results.phones.push({
+        value: formatPhone(val),
+        context: ctx,
+        score: 98,
+        source: "meta",
+      });
+    };
+
+    try {
+      document.querySelectorAll("meta[name], meta[property]").forEach((el) => {
+        const key = (el.getAttribute("property") || el.getAttribute("name") || "").toLowerCase();
+        const content = el.getAttribute("content") || "";
+        if (!key || !content) return;
+        if (META_EMAIL_KEYS.has(key)) pushEmail(content);
+        else if (META_PHONE_KEYS.has(key)) pushPhone(content);
+        else if (META_MAYBE_EMAIL_KEYS.has(key) && /@/.test(content)) pushEmail(content);
+      });
+    } catch (_) {}
+
+    try {
+      document.querySelectorAll('link[rel="me"], link[rel="author"]').forEach((el) => {
+        const href = el.getAttribute("href") || "";
+        if (/^mailto:/i.test(href)) pushEmail(href);
+        else if (/^tel:/i.test(href)) pushPhone(href);
+      });
+    } catch (_) {}
+  }
+
+  // Detect press-release / media-contact blocks and extract contacts
+  // from them with elevated confidence.
+  //
+  // Press releases follow a remarkably consistent convention across PR
+  // wire services and corporate newsrooms: a block near the bottom of
+  // the page labeled with one of a small set of headings ("Media
+  // Contact:", "Press Contact:", "For more information:", "For media
+  // inquiries:") followed by a name, then an email and / or phone. We
+  // anchor on the heading text and extract within a +/-300 char window.
+  //
+  // Trigger conditions (any of the below):
+  //   1. URL path matches a press / newsroom pattern (/press, /news/,
+  //      /newsroom/, /media/, /press-release).
+  //   2. The page body contains one of the press-anchor phrases.
+  //
+  // Contacts found via this path get +20 over the base scoreEmail and
+  // a flat 95 phone score -- press contacts are specifically declared
+  // contact channels, much higher confidence than generic prose.
+  function scanPressContacts(results, seen) {
+    if (!document.body) return;
+
+    const PRESS_URL_PATTERNS = [
+      /\/press(?:[-_\/]|$)/i,
+      /\/newsroom/i,
+      /\/media(?:[-_\/]|$)/i,
+      /\/news\//i,
+      /\/announcements?/i,
+      /\/press-release/i,
+    ];
+
+    const PRESS_ANCHOR_PHRASES = [
+      "media contact", "press contact", "media contacts", "press contacts",
+      "media inquiries", "press inquiries",
+      "for more information", "for further information",
+      "for media inquiries", "for press inquiries",
+      "press relations", "media relations",
+      "for media", "media kit",
+    ];
+
+    const path = (window.location.pathname || "").toLowerCase();
+    const urlSignal = PRESS_URL_PATTERNS.some((p) => p.test(path));
+
+    // Lower-cased body text once, then search anchor positions inside it.
+    let text;
+    try {
+      text = (document.body.innerText || document.body.textContent || "").toLowerCase();
+    } catch (_) { return; }
+    if (!text) return;
+
+    const anchorPositions = [];
+    PRESS_ANCHOR_PHRASES.forEach((phrase) => {
+      let idx = 0;
+      // findAll occurrences -- a long page may have several blocks
+      while ((idx = text.indexOf(phrase, idx)) >= 0) {
+        anchorPositions.push(idx);
+        idx += phrase.length;
+        if (anchorPositions.length >= 8) break; // sanity bound
+      }
+    });
+
+    if (!urlSignal && !anchorPositions.length) return;
+
+    // Collect candidate windows. URL-signal pages get the whole body;
+    // anchor-signal pages get +/-300 chars around each anchor.
+    const windows = [];
+    if (urlSignal && !anchorPositions.length) {
+      // URL-only: scan the whole body, but limit to the bottom half --
+      // press contacts live near the bottom by convention, and limiting
+      // the window keeps us from re-extracting body-prose contacts the
+      // main scan already covered.
+      const start = Math.floor(text.length * 0.5);
+      windows.push(text.substring(start));
+    } else {
+      anchorPositions.forEach((idx) => {
+        const start = Math.max(0, idx - 100);
+        const end = Math.min(text.length, idx + 300);
+        windows.push(text.substring(start, end));
+      });
+    }
+
+    // Extract emails and phones from each window.
+    windows.forEach((win) => {
+      const emails = win.match(EMAIL_REGEX) || [];
+      emails.forEach((raw) => {
+        const email = trimDigitPrefixBleed(raw.toLowerCase());
+        if (seen.has(email)) return;
+        if (
+          email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
+          email.includes("sentry") || email.includes("webpack") ||
+          email.includes("example.com") || email.includes("noreply") ||
+          email.includes("no-reply")
+        ) return;
+        seen.add(email);
+        const ctx = "press / media contact";
+        results.emails.push({
+          value: email,
+          context: ctx,
+          score: Math.min(100, scoreEmail(email, ctx) + 20),
+          source: "press",
+        });
+      });
+
+      const phones = [
+        ...(win.match(PHONE_REGEX) || []),
+        ...(win.match(INTL_PHONE_REGEX) || []),
+      ];
+      phones.forEach((phone) => {
+        const cleaned = phone.replace(/[^\d+]/g, "");
+        if (cleaned.length < 10 || cleaned.length > 15) return;
+        const key = phoneKey(cleaned);
+        if (seen.has(key)) return;
+        // Digit-run guard -- press-release date or article ID could
+        // pattern-match as phone, require a separator or leading +.
+        if (!/[+\-.\s()]/.test(phone)) return;
+        seen.add(key);
+        const ctx = "press / media contact";
+        results.phones.push({
+          value: formatPhone(phone),
+          context: ctx,
+          score: 95,
+          source: "press",
+        });
+      });
+    });
+  }
+
+  // Detect Apple App Store / Google Play app-listing pages and pull the
+  // developer contact info both stores expose by policy.
+  //
+  // Apple App Store (apps.apple.com):
+  //   - "Developer Website" -> external link in the "Information" section
+  //   - "App Support" -> external link (often goes to support page)
+  //   - The page itself shows a developer name; their site (if extracted)
+  //     becomes a known contact-page candidate even though we don't
+  //     fetch it here.
+  //
+  // Google Play (play.google.com):
+  //   - Developer contact section exposes email and website explicitly.
+  //   - Schema.org markup: <meta itemprop="email"> on the developer
+  //     entity gives us the email directly.
+  //   - Privacy policy / terms / support URLs all appear as labeled links.
+  //
+  // We surface emails, phones, and support-page URLs found here. Score
+  // is high (90 for emails, 95 for phones) because store policies
+  // require developers to provide working contact info.
+  function scanAppStorePages(results, seen) {
+    const host = (window.location.hostname || "").toLowerCase();
+    const isApple = host === "apps.apple.com" || host.endsWith(".apps.apple.com");
+    const isPlay  = host === "play.google.com" || host.endsWith(".play.google.com");
+    if (!isApple && !isPlay) return;
+
+    const platform = isApple ? "apple" : "play";
+
+    // ---- emails ----
+    // Both stores expose at least one mailto: link in their developer
+    // info section. Catch those plus schema.org email properties.
+    try {
+      document.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
+        const raw = (el.getAttribute("href") || "").replace("mailto:", "").split("?")[0].trim().toLowerCase();
+        if (!raw || !raw.includes("@")) return;
+        const email = trimDigitPrefixBleed(raw);
+        if (seen.has(email)) return;
+        seen.add(email);
+        const ctx = `${platform === "apple" ? "Apple App Store" : "Google Play"} developer contact`;
+        results.emails.push({
+          value: email,
+          context: ctx,
+          score: 90,
+          source: `appstore:${platform}`,
+        });
+      });
+    } catch (_) {}
+
+    // Schema.org developer email -- Google Play uses these on its app pages.
+    try {
+      document.querySelectorAll('[itemprop="email"]').forEach((el) => {
+        const raw = ((el.getAttribute("content") || el.textContent || "")).trim().toLowerCase();
+        if (!raw || !raw.includes("@")) return;
+        const m = raw.match(EMAIL_REGEX);
+        if (!m) return;
+        const email = trimDigitPrefixBleed(m[0]);
+        if (seen.has(email)) return;
+        seen.add(email);
+        const ctx = `${platform === "apple" ? "Apple App Store" : "Google Play"} developer contact`;
+        results.emails.push({
+          value: email,
+          context: ctx,
+          score: 90,
+          source: `appstore:${platform}`,
+        });
+      });
+    } catch (_) {}
+
+    // ---- phones ----
+    try {
+      document.querySelectorAll('a[href^="tel:"]').forEach((el) => {
+        const phone = (el.getAttribute("href") || "").replace("tel:", "").replace(/\s/g, "");
+        if (!phone || phone.length < 10) return;
+        const key = phoneKey(phone);
+        if (seen.has(key)) return;
+        seen.add(key);
+        const ctx = `${platform === "apple" ? "Apple App Store" : "Google Play"} developer contact`;
+        results.phones.push({
+          value: formatPhone(phone),
+          context: ctx,
+          score: 95,
+          source: `appstore:${platform}`,
+        });
+      });
+    } catch (_) {}
+
+    // ---- developer website + support links ----
+    // Promote labeled "Developer Website" / "App Support" / "Privacy
+    // Policy" links into results.links so the side panel's support
+    // section surfaces them as next-step destinations the user can
+    // click into.
+    const supportLabels = [
+      "developer website", "developer page", "developer info",
+      "app support", "support", "support page",
+      "privacy policy", "privacy", "terms",
+      "website", "contact us", "contact",
+    ];
+    try {
+      document.querySelectorAll("a[href]").forEach((a) => {
+        const text = (a.textContent || "").trim().toLowerCase();
+        if (!text) return;
+        if (!supportLabels.some((lbl) => text.includes(lbl))) return;
+        const href = a.href || "";
+        if (!href.startsWith("http")) return;
+        // Reject the store's own internal nav links -- only surface
+        // external developer-owned destinations.
+        try {
+          const u = new URL(href);
+          if (u.hostname === host) return;
+        } catch (_) { return; }
+        if (seen.has(href)) return;
+        seen.add(href);
+        results.links.push({
+          url: href,
+          text: a.textContent.trim().substring(0, 60),
+          source: `appstore:${platform}`,
+        });
+      });
+    } catch (_) {}
+  }
+
+  // Footer-specialized contact extraction. Three things this pass adds
+  // beyond the generic CONTACT_SELECTORS body-text scan:
+  //
+  //   1. Wider footer detection. Cascades through <footer>,
+  //      [role="contentinfo"], [class*="footer"], [id*="footer"] --
+  //      catching cases the generic [class*="footer"] selector
+  //      already does, plus the semantic HTML5 <footer> and the
+  //      ARIA contentinfo landmark.
+  //
+  //   2. Labeled-field extraction. Looks for "Email:", "Tel:",
+  //      "Phone:", "Fax:", "Toll Free:", "Sales:", "Support:" and
+  //      similar label-prefixed values. The label becomes part of
+  //      the context string so the side panel can show "(Toll Free)"
+  //      or "(Sales)" next to the number.
+  //
+  //   3. Score boost. Anything found inside a footer gets +10 over
+  //      the standard scorePhone / scoreEmail output. Footer contacts
+  //      are conventionally the canonical contact surface for a
+  //      business, not casually-mentioned numbers in body prose.
+  function scanFooterSpecialized(results, seen) {
+    const FOOTER_SELECTORS = [
+      "footer", '[role="contentinfo"]',
+      '[class*="footer" i]', '[id*="footer" i]',
+      '[class*="site-info" i]', '[class*="copyright" i]',
+    ];
+    const footers = new Set();
+    FOOTER_SELECTORS.forEach((sel) => {
+      try {
+        document.querySelectorAll(sel).forEach((el) => footers.add(el));
+      } catch (_) {}
+    });
+    if (!footers.size) return;
+
+    // Match label + value pairs. Captured label normalises to the
+    // intent type ("toll free", "fax", "support", etc.). Captured value
+    // is the email or phone literal.
+    //
+    // Pattern: <label>: <whitespace>* <value>
+    // - Label: one of the recognized prefixes
+    // - Separator: ":" or "-" or "—" or " is "
+    // - Value: rest of line up to a newline or end-of-string-window
+    const LABEL_PATTERN = /\b(toll[\s-]?free|toll[\s-]?free\s+phone|fax|tel|telephone|phone|email|e-mail|mailto|sales|support|customer\s+service|customer\s+care|main\s+(?:line|office|number)|reservations?|emergency|after\s+hours|press|media|info)\s*[:\-–—]\s*([^\n\r]{1,80})/gi;
+
+    // Also try direct email/phone matches even without labels -- but
+    // ONLY if the footer text mentions a contact keyword somewhere
+    // (very weak proximity gate so we don't grab nav copyright phones).
+
+    footers.forEach((el) => {
+      let text;
+      try {
+        text = el.innerText || el.textContent || "";
+      } catch (_) { return; }
+      if (!text) return;
+
+      // Pass A: labeled fields
+      let m;
+      LABEL_PATTERN.lastIndex = 0;
+      while ((m = LABEL_PATTERN.exec(text)) !== null) {
+        const label = (m[1] || "").trim().toLowerCase().replace(/\s+/g, " ");
+        const value = (m[2] || "").trim();
+        if (!value) continue;
+
+        // Email-shaped value
+        const emailMatch = value.match(EMAIL_REGEX);
+        if (emailMatch) {
+          const email = trimDigitPrefixBleed(emailMatch[0].toLowerCase());
+          if (!seen.has(email) && !email.includes("example.com") && !email.includes("noreply") && !email.includes("no-reply")) {
+            seen.add(email);
+            const ctx = `footer (${label})`;
+            results.emails.push({
+              value: email,
+              context: ctx,
+              score: Math.min(100, scoreEmail(email, ctx) + 10),
+              source: "footer",
+            });
+          }
+          continue;
+        }
+
+        // Phone-shaped value
+        const phoneMatch =
+          value.match(PHONE_REGEX) ||
+          value.match(INTL_PHONE_REGEX);
+        if (phoneMatch) {
+          const phone = phoneMatch[0];
+          const cleaned = phone.replace(/[^\d+]/g, "");
+          if (cleaned.length < 10 || cleaned.length > 15) continue;
+          if (!/[+\-.\s()]/.test(phone)) continue;
+          const key = phoneKey(cleaned);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const ctx = `footer (${label})`;
+          results.phones.push({
+            value: formatPhone(phone),
+            context: ctx,
+            score: Math.min(100, scorePhone(ctx) + 10),
+            source: "footer",
+          });
+        }
+      }
+    });
+  }
+
+  // ====================================================================
+  // SITE-SPECIFIC OVERRIDE LIBRARY
+  //
+  // A curated registry of canonical support contacts for the painful-
+  // to-scrape sites users come to Find Me People to escape -- airlines
+  // that hide their phone number behind 4 chatbot prompts, telcos that
+  // gate everything behind a login, banks whose contact page is a
+  // half-megabyte JS app.
+  //
+  // Each entry maps a host (or a host pattern) to a set of
+  // pre-verified contacts that the extension surfaces directly when
+  // the user is on that host, without needing to scrape anything.
+  //
+  // How to add an entry:
+  //   1. Find the company's canonical support contact info from an
+  //      authoritative public source (their own contact page, their
+  //      Wikipedia infobox, their SEC 10-K, etc.).
+  //   2. Stamp the entry with `lastVerified: "YYYY-MM-DD"` so anyone
+  //      auditing the registry later can see when it was checked.
+  //   3. The hostname KEY is the apex domain. The function does the
+  //      "www." stripping and subdomain matching automatically.
+  //
+  // How an entry interacts with the live page scan:
+  //   - Overrides are added to results AFTER the in-page scan paths
+  //     run, but they go through the same canonical phoneKey /
+  //     trimDigitPrefixBleed dedup helpers. So if the live page DID
+  //     surface the same number, the override is silently skipped --
+  //     no duplicates.
+  //   - Score 85: high (above body-text scorePhone, below tel: link
+  //     and meta-tag floors). Reflects "we trust this but it's not
+  //     from the live page right now."
+  //   - source: "site-override" so per-source debug can identify it.
+  //
+  // Stale-entry policy: if the user reports a number is wrong, prefer
+  // removing the entry over editing it -- the next scan will fall
+  // back to whatever the live page exposes. Better to surface
+  // nothing than to surface a dead number.
+  // ====================================================================
+  const SITE_OVERRIDES = {
+    // ---- Airlines ----
+    "spirit.com": {
+      label: "Spirit Airlines", category: "airline", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-855-728-3555", role: "Reservations / customer service" },
+      ],
+    },
+    "united.com": {
+      label: "United Airlines", category: "airline", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-864-8331", role: "Reservations" },
+      ],
+    },
+    "delta.com": {
+      label: "Delta Air Lines", category: "airline", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-221-1212", role: "Reservations" },
+      ],
+    },
+    "aa.com": {
+      label: "American Airlines", category: "airline", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-433-7300", role: "Reservations" },
+      ],
+    },
+    "jetblue.com": {
+      label: "JetBlue Airways", category: "airline", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-538-2583", role: "Reservations" },
+      ],
+    },
+    "southwest.com": {
+      label: "Southwest Airlines", category: "airline", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-435-9792", role: "Customer service" },
+      ],
+    },
+
+    // ---- Telcos / ISPs ----
+    "xfinity.com": {
+      label: "Xfinity / Comcast", category: "telco", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-934-6489", role: "Customer service" },
+      ],
+    },
+    "comcast.com": {
+      label: "Comcast", category: "telco", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-934-6489", role: "Customer service" },
+      ],
+    },
+    "att.com": {
+      label: "AT&T", category: "telco", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-331-0500", role: "Customer service" },
+      ],
+    },
+    "verizon.com": {
+      label: "Verizon", category: "telco", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-922-0204", role: "Customer service" },
+      ],
+    },
+    "t-mobile.com": {
+      label: "T-Mobile", category: "telco", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-937-8997", role: "Customer service" },
+      ],
+    },
+
+    // ---- Banks ----
+    "wellsfargo.com": {
+      label: "Wells Fargo", category: "bank", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-869-3557", role: "Customer service" },
+      ],
+    },
+    "bankofamerica.com": {
+      label: "Bank of America", category: "bank", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-432-1000", role: "Customer service" },
+      ],
+    },
+    "chase.com": {
+      label: "Chase", category: "bank", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-935-9935", role: "Customer service" },
+      ],
+    },
+    "citi.com": {
+      label: "Citi", category: "bank", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-374-9700", role: "Customer service" },
+      ],
+    },
+
+    // ---- E-commerce / payments ----
+    "amazon.com": {
+      label: "Amazon", category: "ecommerce", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-888-280-4331", role: "Customer service" },
+      ],
+    },
+    "ebay.com": {
+      label: "eBay", category: "ecommerce", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-866-540-3229", role: "Customer service" },
+      ],
+    },
+    "paypal.com": {
+      label: "PayPal", category: "payments", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-888-221-1161", role: "Customer service" },
+      ],
+    },
+
+    // ---- Streaming ----
+    "netflix.com": {
+      label: "Netflix", category: "streaming", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-866-579-7172", role: "Customer service" },
+      ],
+    },
+    "hulu.com": {
+      label: "Hulu", category: "streaming", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-888-265-6650", role: "Customer service" },
+      ],
+    },
+
+    // ---- Insurance ----
+    "geico.com": {
+      label: "GEICO", category: "insurance", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-861-8380", role: "Customer service" },
+      ],
+    },
+    "statefarm.com": {
+      label: "State Farm", category: "insurance", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-782-8332", role: "Customer service" },
+      ],
+    },
+
+    // ---- Government (often have phone but buried) ----
+    "irs.gov": {
+      label: "IRS", category: "government", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-829-1040", role: "Individual taxpayer line" },
+      ],
+    },
+    "ssa.gov": {
+      label: "Social Security Administration", category: "government", lastVerified: "2026-06-01",
+      phones: [
+        { value: "+1-800-772-1213", role: "Customer service" },
+      ],
+    },
+  };
+
+  // Look up the override entry that matches the current page's hostname.
+  // Normalizes by stripping "www." and matching the registry key as a
+  // suffix -- so any subdomain of an entry inherits the override (e.g.
+  // help.spirit.com matches the spirit.com entry).
+  function lookupSiteOverride(hostname) {
+    if (!hostname) return null;
+    const host = hostname.toLowerCase().replace(/^www\./, "");
+    if (SITE_OVERRIDES[host]) return SITE_OVERRIDES[host];
+    // Suffix match: walk up subdomain levels until we either find an
+    // entry or run out of dots.
+    let parts = host.split(".");
+    while (parts.length > 1) {
+      parts.shift();
+      const candidate = parts.join(".");
+      if (SITE_OVERRIDES[candidate]) return SITE_OVERRIDES[candidate];
+    }
+    return null;
+  }
+
+  function applySiteOverrides(results, seen) {
+    let entry;
+    try {
+      entry = lookupSiteOverride(window.location.hostname);
+    } catch (_) { return; }
+    if (!entry) return;
+
+    const ctxBase = `${entry.label} (site-known`;
+
+    (entry.phones || []).forEach((p) => {
+      if (!p || !p.value) return;
+      const key = phoneKey(p.value);
+      if (!key || key.length < 10 || seen.has(key)) return;
+      seen.add(key);
+      const ctx = `${ctxBase} ${p.role || "support"})`;
+      results.phones.push({
+        value: formatPhone(p.value),
+        context: ctx,
+        score: 85,
+        source: "site-override",
+      });
+    });
+
+    (entry.emails || []).forEach((e) => {
+      if (!e || !e.value) return;
+      const email = trimDigitPrefixBleed(String(e.value).toLowerCase());
+      if (!email.includes("@") || seen.has(email)) return;
+      seen.add(email);
+      const ctx = `${ctxBase} ${e.role || "support"})`;
+      results.emails.push({
+        value: email,
+        context: ctx,
+        score: 85,
+        source: "site-override",
+      });
+    });
+
+    (entry.links || []).forEach((l) => {
+      if (!l || !l.url) return;
+      if (seen.has(l.url)) return;
+      seen.add(l.url);
+      results.links.push({
+        url: l.url,
+        text: l.text || `${entry.label} contact page`,
+        source: "site-override",
+      });
+    });
+  }
+
   // Walk every iframe on the page; for any that is same-origin (i.e. we can
   // access contentDocument without SecurityError), recurse the scanner's
   // text-extraction step into its body. Bounded to one level of recursion
@@ -507,7 +1449,7 @@
 
         const text = (doc.body && doc.body.innerText) || "";
         if (text) {
-          extractFromText(text, doc.body, results, seen);
+          extractFromText(text, doc.body, results, seen, { requireProximityAnchor: true });
         }
       } catch (_) {
         // SecurityError mid-walk (happens when an iframe re-navigates to a
@@ -526,8 +1468,16 @@
   //
   // Safety guards:
   //   - sessionStorage flag: one attempt per origin per session
-  //   - credentials: 'omit' so we don't send the user's cookies (no
-  //     authenticated requests on their behalf)
+  //   - credentials: 'same-origin' so we behave exactly like the user
+  //     clicking the link from this same site -- the user's existing
+  //     session cookies tag along. We deliberately did NOT use 'omit'
+  //     because Cloudflare-protected sites (a sizable fraction of the
+  //     public web) gate even public pages behind a cf_clearance cookie
+  //     the user already has from their normal browsing; without it our
+  //     fetch gets a bot-challenge body back instead of the real page.
+  //     Since the fetch is same-origin by design, the cookies sent are
+  //     ones the user already has on this site -- no third-party
+  //     identification, no cross-site tracking.
   //   - same-origin only; redirects to a different origin are rejected
   //   - response size capped at 1 MB to bound parse latency
   //   - max 3 candidate paths tried; stops at first one with results
@@ -535,6 +1485,136 @@
   // Dedup keys (phoneKey, trimDigitPrefixBleed) are the same helpers the
   // synchronous scan paths use, so a number/email surfaced first by the
   // DOM scan and again by the fallback fetch collapses to one entry.
+  // Background-fetch a list of discovered same-origin contact-page URLs
+  // (collected during the main scan via CONTACT_PAGE_PATTERNS) and merge
+  // any emails / phones found into results. Distinct from
+  // fetchAndScanFallbackPages:
+  //
+  //   - That function fires only when the in-page scan returned zero
+  //     contacts, tries a hardcoded list of common paths, and stops at
+  //     the first hit.
+  //
+  //   - This function fires when the in-page scan DID find contact-page
+  //     links, fetches each (up to a 5-URL budget), and merges every
+  //     hit. This is what surfaces /media-contacts AND
+  //     /direct-contact-information on dhs.gov instead of only the first.
+  //
+  // Bounding:
+  //   - Max 5 fetches per scan
+  //   - Same-origin only; cross-origin redirects discarded
+  //   - Per-URL sessionStorage gate ("__fmp_fetched_<url>") so re-scans
+  //     and page navigations don't re-fetch
+  //   - 1 MB body cap per response
+  //   - credentials: 'same-origin' -- the user's existing cookies for
+  //     this site come along, so Cloudflare-style cookie-gated content
+  //     (cf_clearance, etc.) is reachable. Since the fetch is same-
+  //     origin by design, the cookies sent are ones the user already
+  //     has on this site -- equivalent to them clicking the link
+  //     themselves. No third-party identification, no cross-site
+  //     tracking.
+  //
+  // Found contacts use the canonical phoneKey / trimDigitPrefixBleed
+  // helpers, so duplicates against the in-page scan collapse to one entry.
+  async function fetchDiscoveredContactPages(urls, results, seen) {
+    if (!Array.isArray(urls) || !urls.length) return;
+    if (!/^https?:/.test(window.location.protocol)) return;
+    const origin = window.location.origin;
+
+    // Filter to same-origin URLs that haven't been fetched this session
+    // and reserve their sessionStorage flags up-front (race-tolerant).
+    const targets = [];
+    const seenInBatch = new Set();
+    for (const url of urls) {
+      if (targets.length >= 5) break;
+      if (seenInBatch.has(url)) continue;
+      seenInBatch.add(url);
+      try {
+        if (new URL(url).origin !== origin) continue;
+      } catch (_) { continue; }
+      const cacheKey = "__fmp_fetched_" + url;
+      try {
+        if (sessionStorage.getItem(cacheKey)) continue;
+        sessionStorage.setItem(cacheKey, "1");
+      } catch (_) { continue; }
+      targets.push(url);
+    }
+    if (!targets.length) return;
+
+    let added = 0;
+    for (const url of targets) {
+      try {
+        const resp = await fetch(url, {
+          credentials: "same-origin",
+          redirect: "follow",
+          cache: "no-cache",
+        });
+        if (!resp.ok) continue;
+        try {
+          if (new URL(resp.url).origin !== origin) continue;
+        } catch (_) { continue; }
+
+        const text = await resp.text();
+        if (!text || text.length > 1024 * 1024) continue;
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, "text/html");
+        if (!doc || !doc.body) continue;
+
+        const ctx = "from " + (new URL(url).pathname || url);
+
+        // mailto: / tel: anchors -- highest confidence on a contact page.
+        doc.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
+          const raw = (el.getAttribute("href") || "").replace("mailto:", "").split("?")[0].toLowerCase();
+          if (!raw || !raw.includes("@")) return;
+          const email = trimDigitPrefixBleed(raw);
+          if (seen.has(email)) return;
+          seen.add(email);
+          results.emails.push({
+            value: email,
+            context: ctx,
+            score: Math.min(100, scoreEmail(email, ctx) + 10),
+            source: "discovered-page",
+          });
+          added++;
+        });
+        doc.querySelectorAll('a[href^="tel:"]').forEach((el) => {
+          const phone = (el.getAttribute("href") || "").replace("tel:", "").replace(/\s/g, "");
+          if (!phone || phone.length < 10) return;
+          const key = phoneKey(phone);
+          if (seen.has(key)) return;
+          seen.add(key);
+          results.phones.push({
+            value: formatPhone(phone),
+            context: ctx,
+            score: 95,
+            source: "discovered-page",
+          });
+          added++;
+        });
+
+        // Body text -- with proximity-anchor required for phones, same
+        // bar as the live-page loose-body scan.
+        const body = (doc.body && doc.body.innerText) || "";
+        if (body) {
+          const before = results.emails.length + results.phones.length;
+          extractFromText(body, doc.body, results, seen, { requireProximityAnchor: true });
+          added += (results.emails.length + results.phones.length) - before;
+        }
+      } catch (_) {
+        // Network error, parse error, CORS block -- silent skip.
+      }
+    }
+
+    if (added > 0) {
+      results.emails.sort((a, b) => b.score - a.score);
+      results.phones.sort((a, b) => b.score - a.score);
+      const total = results.emails.length + results.phones.length;
+      try {
+        chrome.runtime.sendMessage({ action: "updateBadge", count: total }).catch(() => {});
+      } catch (_) {}
+    }
+  }
+
   async function fetchAndScanFallbackPages(results, seen) {
     if (results.emails.length + results.phones.length > 0) return;
     const origin = window.location.origin;
@@ -562,7 +1642,7 @@
       try {
         const url = origin + path;
         const resp = await fetch(url, {
-          credentials: "omit",
+          credentials: "same-origin",
           redirect: "follow",
           cache: "no-cache",
         });
@@ -611,9 +1691,13 @@
           });
         });
 
-        // Body-text scan over the fetched page
+        // Body-text scan over the fetched page. Loose-body scope on a
+        // fetched /contact or /about response: keep the proximity anchor
+        // requirement on so we don't pull a press-release date or a board
+        // member's personal cell out as a "found contact." mailto: / tel:
+        // anchors above already covered the high-confidence cases.
         const body = (doc.body && doc.body.innerText) || "";
-        if (body) extractFromText(body, doc.body, results, seen);
+        if (body) extractFromText(body, doc.body, results, seen, { requireProximityAnchor: true });
 
         // Re-sort after merging fresh results
         results.emails.sort((a, b) => b.score - a.score);
@@ -647,6 +1731,55 @@
   function trimDigitPrefixBleed(email) {
     return email.replace(/^\d{5,}(?=[a-z])/, "");
   }
+
+  // Anchor keywords that signal a phone number is a real contact number
+  // rather than a stray digit run. We require at least one of these in the
+  // +/-100 character window around a phone match when scanning loose body
+  // text (Google search results pages, business directories, social feeds,
+  // anywhere a phone might appear without contact context). Without this,
+  // every snippet phone on a Google search page lands in results because
+  // the page-level scorePhone() check sees plenty of words page-wide but
+  // tells us nothing about the phone's actual surroundings.
+  //
+  // Each entry below is a lowercase substring that, if present in the
+  // surrounding text, is enough to anchor the phone.
+  const PHONE_PROXIMITY_ANCHORS = [
+    "contact", "support", "customer service", "customer care",
+    "help line", "help desk", "service desk", "care team",
+    "call us", "call:", "call our", "phone:", "phone us",
+    "tel:", "tel.", "telephone:", "ph:", "ph.", "ph ",
+    "reach us", "reach out", "talk to", "speak to", "speak with",
+    "toll free", "toll-free", "tollfree", "hotline",
+    "billing", "tech support", "technical support",
+    "main office", "main number", "main line", "front desk",
+    "sales line", "sales:", "info:", "info ",
+    "fax", "after hours", "emergency", "concierge",
+  ];
+
+  // Pull a +/-N character window around a literal match within text. Used
+  // by extractFromText's loose-body mode to inspect the phone's neighborhood
+  // for a contact-context anchor.
+  function surroundingTextFor(text, match, windowChars) {
+    const w = windowChars || 100;
+    const idx = text.indexOf(match);
+    if (idx < 0) return "";
+    return text.substring(
+      Math.max(0, idx - w),
+      Math.min(text.length, idx + match.length + w)
+    ).toLowerCase();
+  }
+
+  function hasPhoneProximityAnchor(surrounding) {
+    if (!surrounding) return false;
+    return PHONE_PROXIMITY_ANCHORS.some((k) => surrounding.includes(k));
+  }
+
+  // opts.requireProximityAnchor: when true, drop phone matches whose +/-100
+  // character window contains no contact-context keyword. Used by the
+  // loose-body scan to keep Google search results / directory pages /
+  // social feeds from dumping every snippet phone into the results.
+  // The narrow CONTACT_SELECTORS scans don't set this flag because they
+  // already proved contact-context at the container level.
 
   // Identify the Zendesk subdomain for the current page, or null if the
   // page isn't a Zendesk help center / doesn't carry a Web Widget that
@@ -826,7 +1959,8 @@
     }
   }
 
-  function extractFromText(text, parentEl, results, seen) {
+  function extractFromText(text, parentEl, results, seen, opts) {
+    opts = opts || {};
     // Emails
     const emailMatches = text.match(EMAIL_REGEX) || [];
     emailMatches.forEach((email) => {
@@ -856,6 +1990,10 @@
       const cleaned = phone.replace(/[^\d+]/g, "");
       const key = phoneKey(cleaned);
       if (!seen.has(key) && cleaned.length >= 10 && cleaned.length <= 15) {
+        if (opts.requireProximityAnchor) {
+          const surrounding = surroundingTextFor(text, phone, 100);
+          if (!hasPhoneProximityAnchor(surrounding)) return;
+        }
         seen.add(key);
         const context = parentEl ? getContext(parentEl) : "";
         const score = scorePhone(context);
@@ -866,6 +2004,94 @@
           source: "text",
         });
       }
+    });
+  }
+
+  // Identify the user's own logged-in identity (email / phone) from the
+  // page's signed-in account UI, and add it to the dedup `seen` set so it
+  // never gets surfaced as a "contact." Surfacing the user's own avatar
+  // email on a Google search page (or any logged-in app) is a false
+  // positive: the user cannot contact themselves.
+  //
+  // Two passes:
+  //
+  //   A. ARIA-LABEL / TITLE PATTERN MATCH
+  //      Web apps almost universally label the signed-in-user avatar /
+  //      account dropdown with text like "Google Account: <Name>
+  //      (<email>)" or "Signed in as <email>." If an element's
+  //      aria-label or title contains one of those patterns AND also
+  //      contains an email, we treat that email as personal.
+  //
+  //   B. ACCOUNT-DROPDOWN STRUCTURAL SELECTORS
+  //      Some apps render the email as visible text inside an element
+  //      with class/id/data-testid markers like "account-menu",
+  //      "user-menu", "avatar", "profile-menu". We pull any email and
+  //      phone out of those elements' innerText and treat them as
+  //      personal.
+  //
+  // The patterns are tight enough that legitimate support emails on a
+  // contact page (e.g. "Contact our account team at...") don't get
+  // dropped: those won't appear inside an aria-label that literally
+  // starts "<vendor> Account:" and won't be inside an element whose
+  // class is "user-menu" or similar.
+  function seedPersonalIdentity(seen) {
+    const ACCOUNT_LABEL_PATTERNS = [
+      /\b(?:google|microsoft|apple|outlook|yahoo|aol|icloud|github|gitlab|linkedin|atlassian|slack|notion|adobe|spotify|dropbox|figma|amazon|twitter|facebook|instagram)\s+account[:\s]/i,
+      /\bsigned\s+in\s+as\b/i,
+      /\bswitch\s+(?:to\s+(?:another\s+)?)?account\b/i,
+      /\bmanage\s+your\s+(?:google\s+)?account\b/i,
+      /\byour\s+\w+\s+account\b/i,
+      /\byou(?:'re|\s+are)\s+signed\s+in\b/i,
+    ];
+
+    const ACCOUNT_STRUCTURAL_SELECTORS = [
+      '[class*="account-menu"]',  '[id*="account-menu"]',
+      '[class*="user-menu"]',     '[id*="user-menu"]',
+      '[class*="profile-menu"]',  '[id*="profile-menu"]',
+      '[class*="account-info"]',  '[class*="user-info"]',
+      '[class*="avatar"]',
+      '[data-testid*="user-menu"]',  '[data-testid*="account-menu"]',
+      '[data-testid*="profile-menu"]',
+      '[aria-label*="account menu" i]', '[aria-label*="profile menu" i]',
+      '[aria-label*="user menu" i]',
+    ];
+
+    const seedFromText = (text) => {
+      if (!text) return;
+      (text.match(EMAIL_REGEX) || []).forEach((e) => seen.add(e.toLowerCase()));
+      const phones = [
+        ...(text.match(PHONE_REGEX) || []),
+        ...(text.match(INTL_PHONE_REGEX) || []),
+      ];
+      phones.forEach((p) => {
+        const cleaned = p.replace(/[^\d+]/g, "");
+        if (cleaned.length >= 10 && cleaned.length <= 15) {
+          seen.add(phoneKey(cleaned));
+        }
+      });
+    };
+
+    // Pass A: aria-label / title text matching one of the account patterns.
+    try {
+      document.querySelectorAll("[aria-label], [title]").forEach((el) => {
+        const label = (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("title") || "");
+        if (!label || !/@/.test(label)) return;
+        if (!ACCOUNT_LABEL_PATTERNS.some((p) => p.test(label))) return;
+        seedFromText(label);
+      });
+    } catch (_) {}
+
+    // Pass B: structural selectors. Read the element's innerText (respects
+    // layout, so screen-reader-only divs that visually-hidden but still
+    // rendered are picked up) and seed any contacts found inside.
+    ACCOUNT_STRUCTURAL_SELECTORS.forEach((sel) => {
+      try {
+        document.querySelectorAll(sel).forEach((el) => {
+          const text = (el.innerText || el.textContent || "");
+          if (!text || !/@|\d{3}/.test(text)) return;
+          seedFromText(text);
+        });
+      } catch (_) {}
     });
   }
 
