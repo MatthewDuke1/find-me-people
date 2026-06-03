@@ -161,6 +161,39 @@ function toE164(phone) {
   return "+" + s;
 }
 
+// Contact history -- kept in chrome.storage.local so it survives popup
+// reopens, browser restarts, and is shared with the side panel. Capped at 50
+// most-recent entries; same value re-copied bubbles to the top.
+const HISTORY_KEY = "fmp_history";
+const HISTORY_MAX = 50;
+
+function getHistory(cb) {
+  if (!chrome.storage || !chrome.storage.local) return cb([]);
+  chrome.storage.local.get([HISTORY_KEY], (r) => cb(Array.isArray(r[HISTORY_KEY]) ? r[HISTORY_KEY] : []));
+}
+function addToHistory(entry) {
+  if (!chrome.storage || !chrome.storage.local) return;
+  if (!entry || !entry.value) return;
+  getHistory((hist) => {
+    const filtered = hist.filter((e) => e.value !== entry.value);
+    filtered.unshift({ ...entry, timestamp: Date.now() });
+    if (filtered.length > HISTORY_MAX) filtered.length = HISTORY_MAX;
+    chrome.storage.local.set({ [HISTORY_KEY]: filtered });
+  });
+}
+function clearHistory(cb) {
+  if (!chrome.storage || !chrome.storage.local) return cb && cb();
+  chrome.storage.local.set({ [HISTORY_KEY]: [] }, cb);
+}
+function timeAgo(ts) {
+  const s = Math.max(1, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return s + "s ago";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  if (s < 86400 * 7) return Math.floor(s / 86400) + "d ago";
+  return Math.floor(s / (86400 * 7)) + "w ago";
+}
+
 function openUrl(url) {
   // HTTPS URLs go through chrome.tabs.create -- the official extension API
   // bypasses popup-blocker suppression that silently kills programmatic
@@ -260,6 +293,80 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  // View tab switching (On this page <-> History). The "now" view is the
+  // existing scan render; "history" lazy-renders from chrome.storage.local
+  // whenever the tab is selected (cheap, history is < 50 entries).
+  document.querySelectorAll(".view-tab").forEach((tabBtn) => {
+    tabBtn.addEventListener("click", () => {
+      document.querySelectorAll(".view-tab").forEach((b) => b.classList.toggle("active", b === tabBtn));
+      const v = tabBtn.dataset.view;
+      if (v === "history") renderHistoryView();
+      else if (v === "now" && window._lastScanResults) renderResults(window._lastScanResults);
+    });
+  });
+
+  function renderHistoryView(filter) {
+    getHistory((hist) => {
+      const q = (filter || "").trim().toLowerCase();
+      const matched = q
+        ? hist.filter((e) => (e.value + " " + (e.hostname || "")).toLowerCase().includes(q))
+        : hist;
+      let html = `<input class="history-search" id="history-search" type="search" placeholder="Search history (${hist.length})" value="${escapeHtml(filter || "")}" />`;
+      html += '<div class="history-list">';
+      if (matched.length === 0) {
+        html += `<div class="history-empty">${hist.length === 0 ? "No copied contacts yet. Click any contact above to save it here." : "No matches."}</div>`;
+      } else {
+        matched.forEach((e) => {
+          const v = escapeHtml(e.value);
+          html += `
+            <div class="history-item" data-copy="${v}" data-copy-type="${e.type}" data-copy-score="${e.score || 0}">
+              <div class="history-row1">
+                <span class="history-value">${v}</span>
+                <span class="history-when">${timeAgo(e.timestamp)}</span>
+              </div>
+              <div class="history-row2">
+                <span class="history-type">${e.type}</span>
+                <span>${escapeHtml(e.hostname || "")}</span>
+              </div>
+            </div>`;
+        });
+      }
+      html += "</div>";
+      if (hist.length > 0) {
+        html += `<div class="history-footer"><button class="history-clear" id="history-clear">Clear history</button></div>`;
+      }
+      contentEl.innerHTML = html;
+      // Wire search box (re-render on input, preserving focus across re-renders)
+      const search = document.getElementById("history-search");
+      if (search) {
+        search.addEventListener("input", () => renderHistoryView(search.value));
+        search.focus();
+        // Place caret at end
+        const v = search.value; search.value = ""; search.value = v;
+      }
+      // Wire click-to-recopy on each history entry
+      contentEl.querySelectorAll("[data-copy]").forEach((el) => {
+        el.addEventListener("click", () => {
+          const value = el.dataset.copy;
+          copyToClipboard(value);
+          const type = el.dataset.copyType || "unknown";
+          const score = parseInt(el.dataset.copyScore || "0", 10) || 0;
+          let host = "";
+          try { host = new URL(tab.url).hostname.replace(/^www\./, ""); } catch (_) {}
+          if (type === "email" || type === "phone") addToHistory({ value, type, hostname: host, score });
+        });
+      });
+      const clearBtn = document.getElementById("history-clear");
+      if (clearBtn) {
+        clearBtn.addEventListener("click", () => {
+          if (confirm("Clear all history entries?")) {
+            clearHistory(() => renderHistoryView(""));
+          }
+        });
+      }
+    });
+  }
+
   // Get current tab
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const RESTRICTED_PROTOCOLS = ["chrome://", "about:", "moz-extension://", "chrome-extension://", "resource://", "view-source:"];
@@ -289,6 +396,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         );
         return;
       }
+      window._lastScanResults = response;
       renderResults(response);
     });
   } catch (e) {
@@ -342,7 +450,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         ).join("");
         html += `
           <div class="contact-item">
-            <div class="contact-main" data-copy="${escVal}">
+            <div class="contact-main" data-copy="${escVal}" data-copy-type="email" data-copy-score="${e.score}">
               <div class="value">${escVal}</div>
               <div class="meta">
                 <span>Click to copy</span>
@@ -372,7 +480,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         ).join("");
         html += `
           <div class="contact-item">
-            <div class="contact-main" data-copy="${escVal}">
+            <div class="contact-main" data-copy="${escVal}" data-copy-type="phone" data-copy-score="${p.score}">
               <div class="value">${escVal}</div>
               <div class="meta">
                 <span>Click to copy</span>
@@ -417,9 +525,21 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     contentEl.innerHTML = html;
 
-    // Wire up click-to-copy (inline onclick is blocked by MV3 CSP)
+    // Wire up click-to-copy (inline onclick is blocked by MV3 CSP). Each
+    // copy also records the contact into history so the user can find it
+    // later via the History view -- no extra UI clutter, just a side effect.
+    let hostname = "";
+    try { hostname = new URL(tab.url).hostname.replace(/^www\./, ""); } catch (_) {}
     contentEl.querySelectorAll("[data-copy]").forEach((el) => {
-      el.addEventListener("click", () => copyToClipboard(el.dataset.copy));
+      el.addEventListener("click", () => {
+        const value = el.dataset.copy;
+        copyToClipboard(value);
+        const type = el.dataset.copyType || "unknown";
+        const score = parseInt(el.dataset.copyScore || "0", 10) || 0;
+        if (type === "email" || type === "phone") {
+          addToHistory({ value, type, hostname, score });
+        }
+      });
     });
 
     // Expand/collapse the Compose / Call action panel under each contact
