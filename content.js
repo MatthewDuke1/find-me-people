@@ -251,6 +251,13 @@
       fetchDiscoveredContactPages(discoveredContactUrls, results, seen);
     }
 
+    // 6b. Sitemap.xml mining. Many large sites surface their canonical
+    // contact / press / support URLs in /sitemap.xml that the homepage
+    // links section never touches. Fetch the sitemap (once per origin
+    // per session), filter the URL list to contact-page patterns, and
+    // queue them through the same discovered-page fetch path.
+    fetchSitemapContactUrls(results, seen);
+
     // 7. Fallback: if the in-DOM scan AND the discovered-page fetch came
     // up totally empty, fire a fire-and-forget background fetch of a
     // hardcoded list of common contact paths (/contact, /about, /support)
@@ -1475,6 +1482,101 @@
   // Dedup keys (phoneKey, trimDigitPrefixBleed) are the same helpers the
   // synchronous scan paths use, so a number/email surfaced first by the
   // DOM scan and again by the fallback fetch collapses to one entry.
+  // Fetch /sitemap.xml (and /sitemap_index.xml as a fallback), extract
+  // every URL that matches CONTACT_PAGE_PATTERNS, and pipe them through
+  // the same discovered-page fetch path. Many large sites (gov,
+  // enterprise, news orgs) surface canonical contact / press /
+  // newsroom pages in their sitemap that the homepage links section
+  // never touches.
+  //
+  // Bounding:
+  //   - Once per origin per browsing session (sessionStorage gate)
+  //   - 2 MB body cap on the sitemap response
+  //   - Up to 5 contact-pattern URLs queued (existing 5-URL cap inside
+  //     fetchDiscoveredContactPages still applies)
+  //   - Same-origin only -- cross-origin sitemap redirects are dropped
+  //   - credentials: 'same-origin' (same Cloudflare-friendly default
+  //     the rest of our background fetches use)
+  async function fetchSitemapContactUrls(results, seen) {
+    const origin = window.location.origin;
+    if (!/^https?:/.test(window.location.protocol)) return;
+
+    try {
+      const CACHE_KEY = "__fmp_sitemap_attempted";
+      if (sessionStorage.getItem(CACHE_KEY)) return;
+      sessionStorage.setItem(CACHE_KEY, "1");
+    } catch (_) {
+      return;
+    }
+
+    const candidates = [origin + "/sitemap.xml", origin + "/sitemap_index.xml"];
+    let xml = null;
+    for (const url of candidates) {
+      try {
+        const resp = await fetch(url, {
+          credentials: "same-origin",
+          redirect: "follow",
+          cache: "no-cache",
+        });
+        if (!resp.ok) continue;
+        try {
+          if (new URL(resp.url).origin !== origin) continue;
+        } catch (_) { continue; }
+        const text = await resp.text();
+        if (!text || text.length > 2 * 1024 * 1024) continue;
+        // Sanity check: real sitemap XML carries the sitemaps.org
+        // namespace. Bot-challenge HTML bodies won't.
+        if (!/<urlset|<sitemapindex/i.test(text)) continue;
+        xml = text;
+        break;
+      } catch (_) { /* try the next candidate */ }
+    }
+    if (!xml) return;
+
+    // Extract <loc>URL</loc> entries -- works for both <urlset> and
+    // <sitemapindex> (we won't recurse into sub-sitemaps in this pass;
+    // the top-level sitemap.xml usually exposes the contact pages
+    // directly, and a single recursion bound keeps the fetch budget
+    // tight).
+    const locs = [];
+    const re = /<loc[^>]*>\s*([^<]+?)\s*<\/loc>/gi;
+    let m;
+    while ((m = re.exec(xml)) !== null) {
+      const u = m[1].trim();
+      if (!u || locs.length >= 200) break; // sanity cap
+      locs.push(u);
+    }
+
+    const contactUrls = [];
+    for (const u of locs) {
+      if (contactUrls.length >= 5) break;
+      try {
+        const parsed = new URL(u);
+        if (parsed.origin !== origin) continue;
+        if (!CONTACT_PAGE_PATTERNS.some((p) => p.test(parsed.pathname))) continue;
+        if (seen.has(u)) continue;
+        contactUrls.push(u);
+      } catch (_) { /* skip malformed */ }
+    }
+
+    if (contactUrls.length) {
+      // Push to results.links so they surface in the Support pages
+      // section regardless of whether the fetch finds new contacts.
+      contactUrls.forEach((u) => {
+        if (!seen.has(u)) {
+          seen.add(u);
+          results.links.push({
+            url: u,
+            text: "From sitemap.xml",
+            source: "sitemap",
+          });
+        }
+      });
+      // Pipe through the existing discovered-page fetcher.
+      await fetchDiscoveredContactPages(contactUrls, results, seen);
+    }
+  }
+
   // Background-fetch a list of discovered same-origin contact-page URLs
   // (collected during the main scan via CONTACT_PAGE_PATTERNS) and merge
   // any emails / phones found into results. Distinct from
