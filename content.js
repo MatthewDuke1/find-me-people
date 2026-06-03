@@ -2411,6 +2411,39 @@
       .replace(/'/g, "&#39;");
   }
 
+  // Short human-readable provenance label for a result item. Goes in the
+  // meta row next to the score so the user knows WHERE we found the
+  // contact -- a curated source like a mailto: link reads very different
+  // from a contact picked up via free-text scan or a site-override.
+  // The full e.context already lives in the title attribute on the row
+  // for tooltip-on-hover. This label is the short visible version.
+  function spProvenanceLabel(item) {
+    if (!item) return "";
+    const src = String(item.source || "").toLowerCase();
+    const ctx = String(item.context || "").toLowerCase();
+    if (src === "mailto") return "mailto link";
+    if (src === "tel") return "tel link";
+    if (src === "meta") return "page meta";
+    if (src === "press") return "press release";
+    if (src === "footer") return "footer";
+    if (src === "site-override") return "site-known";
+    if (src === "globals") return "page state";
+    if (src.indexOf("chatbot:") === 0) return "chatbot " + src.slice("chatbot:".length);
+    if (src.indexOf("appstore:") === 0) {
+      return src === "appstore:apple" ? "App Store" : "Play Store";
+    }
+    if (src.indexOf("zendesk-kb:") === 0) return "Zendesk KB";
+    if (src === "fetch" || src === "discovered-page") {
+      // context typically reads "from /contact" or "from /support" -- use it
+      return ctx.startsWith("from ") ? ctx.substring(0, 24) : "fetched page";
+    }
+    if (src === "iframe-mailto" || src === "iframe-tel") return "iframe";
+    if (src === "data-attr" || src === "cf") return "decoded";
+    if (src === "sitemap") return "sitemap";
+    if (src === "text") return "page text";
+    return src || "page";
+  }
+
   function spBuildBody(currentResults, currentClient, history) {
     const total = currentResults.emails.length + currentResults.phones.length;
     const totalSuffix = total === 1 ? "" : "s";
@@ -2460,12 +2493,15 @@
           const tplChips = EMAIL_TEMPLATES.map(
             (t) => `<button class="chip" data-sp-template="${t.id}" data-sp-email="${escVal}">${spEscape(t.label)}</button>`
           ).join("");
+          const prov = spProvenanceLabel(e);
+          const tipText = spEscape(e.context || prov);
           html += `
             <div class="row">
-              <div class="row-main" data-sp-copy="${escVal}" data-sp-copy-type="email" data-sp-copy-score="${e.score}">
+              <div class="row-main" data-sp-copy="${escVal}" data-sp-copy-type="email" data-sp-copy-score="${e.score}" title="${tipText}">
                 <div class="val">${escVal}</div>
                 <div class="meta">
                   <span>Click to copy</span>
+                  ${prov ? `<span class="provenance">&middot; ${spEscape(prov)}</span>` : ""}
                   <span class="score score-${sc}">${lbl}</span>
                 </div>
               </div>
@@ -2490,12 +2526,15 @@
           const voipChips = VOIP_SERVICES.map(
             (s) => `<button class="chip" data-sp-voip="${s.id}" data-sp-phone="${escE164}">${spEscape(s.name)}</button>`
           ).join("");
+          const prov = spProvenanceLabel(p);
+          const tipText = spEscape(p.context || prov);
           html += `
             <div class="row">
-              <div class="row-main" data-sp-copy="${escVal}" data-sp-copy-type="phone" data-sp-copy-score="${p.score}">
+              <div class="row-main" data-sp-copy="${escVal}" data-sp-copy-type="phone" data-sp-copy-score="${p.score}" title="${tipText}">
                 <div class="val">${escVal}</div>
                 <div class="meta">
                   <span>Click to copy</span>
+                  ${prov ? `<span class="provenance">&middot; ${spEscape(prov)}</span>` : ""}
                   <span class="score score-${sc}">${lbl}</span>
                 </div>
               </div>
@@ -2722,8 +2761,18 @@
       color: #52525b;
       margin-top: 2px;
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-start;
+      gap: 6px;
       align-items: center;
+    }
+    .meta .score { margin-left: auto; }
+    .meta .provenance {
+      color: #71717a;
+      font-size: 10px;
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .score {
       font-size: 9px;
