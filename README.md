@@ -47,6 +47,48 @@ The result: reaching a real human for help has become a skill, not a right.
 
 ## Changelog
 
+### 1.6.0 -- 2026-06-03
+
+Minor version bump for a strategically different product than what shipped as 1.5.2. The release that was originally drafted as 1.5.7 grew while it sat -- when the merge dust settled there were 20 PRs of feature work between 1.5.2 and now and the manifest description / privacy policy / product positioning had shifted from "find hidden contacts" to "bypass chatbots." That's a minor bump, not a patch.
+
+No breaking changes -- same `activeTab` / `scripting` / `storage` / `<all_urls>` permissions, same `chrome.storage.local` schema, no user action required to update. The store listing description, screenshots, and category remain valid.
+
+**Bypass chatbots specifically (the new product positioning):**
+
+- **Chatbot vendor detection.** Detects 10 vendor widgets -- Intercom, Zendesk, Drift, Crisp, HubSpot, Tidio, LiveChat, Tawk, Freshchat, Olark -- by probing their config globals from a page-world script bridge. When a vendor is identified, we extract any directly-exposed contact email, reconstruct the vendor's standard help-center URL from the account identifier (`app_id` / subdomain / workspace ID), and surface that URL in the side panel's Support pages section. No interaction with the chat UI itself.
+- **Zendesk Help Center search.** When the page carries a Zendesk Web Widget or is itself a Zendesk help center, the extension makes **one anonymous query** to that vendor's public help-center search API (`/api/v2/help_center/articles/search.json?query=contact`) to find the real support contact the bot was trained to deflect from. The bot is a thin RAG layer over these very articles; reading them directly returns the same answer without the chat-UI dance. `credentials: 'omit'`, once-per-subdomain-per-session, 1 MB cap, score floor 95.
+- **Site-specific override library.** Curated registry of 24 canonical support contacts for the painful-to-scrape sites the product targets in its marketing: 6 airlines (Spirit, United, Delta, American, JetBlue, Southwest), 5 telcos (Xfinity, Comcast, AT&T, Verizon, T-Mobile), 4 banks (Wells Fargo, BofA, Chase, Citi), 3 e-commerce / payments (Amazon, eBay, PayPal), 2 streaming (Netflix, Hulu), 2 insurance (GEICO, State Farm), 2 government (IRS, SSA). Each entry stamped with `lastVerified: "YYYY-MM-DD"`. On-page finds still run and win via canonical `phoneKey` dedup -- so a stale override gets silently replaced by what the live page exposes.
+
+**Broader contact discovery:**
+
+- **Broader URL pattern matching.** `CONTACT_PAGE_PATTERNS` was too narrow -- `/\/contact/i` missed `/media-contacts` and `/direct-contact-information` (dhs.gov-style URLs). Replaced with a boundary-aware pattern (`/[-_\/]contacts?(?:[-_\/]|$)/i`) plus a new `/press` pattern for media pages.
+- **Discovered-page background fetch.** The existing fallback fetch only fired when the in-page scan returned zero contacts. Most gov / large-org sites surface multiple specialized contact pages (`/contact` AND `/media-contacts` AND `/direct-contact-information`); only the first was being reached. New `fetchDiscoveredContactPages` fetches every same-origin contact-page link found during the scan (max 5 per scan, per-URL sessionStorage gate, 1 MB cap).
+- **Sitemap.xml mining.** Many large sites surface canonical contact / press / newsroom pages in `/sitemap.xml` that the homepage's links section never touches. New `fetchSitemapContactUrls` fetches the sitemap (once per origin per session), extracts `<loc>` URLs matching contact-page patterns, and pipes them through the discovered-page fetch path.
+- **`credentials: 'same-origin'` for background fetches.** Cloudflare-protected sites gate even public pages behind a `cf_clearance` cookie the user already has from normal browsing. With the previous `credentials: 'omit'` we got bot-challenge bodies back instead of real pages. Same-origin sends only cookies the user already has on this site -- equivalent to them clicking the link manually. No third-party identification, no cross-site tracking.
+- **Page meta tag scan.** New `scanPageMeta` pulls contacts from author-declared metadata: `<meta property="og:email">`, `<meta property="business:contact_data:*">`, `<meta name="contact">`, `<link rel="me">`, `<link rel="author">`. Anything found here is high-confidence because the site author put it there deliberately.
+- **Press-release / media-contact detection.** New `scanPressContacts` triggers on press / newsroom / media URLs OR on body text containing one of 15 anchor phrases ("Media Contact:", "For more information:", "press relations", etc.). Extracts within +/-300 char windows of each anchor with elevated confidence.
+- **App Store / Play Store developer pages.** New `scanAppStorePages` activates on `apps.apple.com` and `play.google.com` listings. Extracts the developer email (`mailto:` anchors + `[itemprop="email"]` schema markup), phones, and labeled support / privacy / website links the stores require by policy.
+- **Footer-specialized labeled-field extraction.** New `scanFooterSpecialized` walks `<footer>` / `[role="contentinfo"]` / `[class*="footer"]` and matches labeled patterns ("Toll Free:", "Fax:", "Sales:", "Customer Service - ..."). Footer-located contacts get a +10 score boost.
+- **Smarter email patterns.** New `decodeObfuscatedText` preprocesses body text before `EMAIL_REGEX` so common scraper-defeating obfuscations resolve -- `jane (at) acme (dot) com`, `user [at] foo [dot] org`, `team＠host.tld` (fullwidth Unicode at), `user%40host.tld` (URL-encoded), `help&#64;host.tld` (HTML entity), `john_at_company_dot_net`. False-positive guard: bare "AT" / "DOT" replacement requires word chars on both sides so prose like "stop, at last" doesn't get mangled.
+
+**Noise reduction (UX-critical fixes):**
+
+- **Filter the user's own logged-in identity.** On any signed-in app (Google search, Gmail, GitHub, LinkedIn, Slack), the avatar's `aria-label` ("Google Account: Matt Duke (matt@gmail.com)") was getting parsed as a found contact. New `seedPersonalIdentity` runs as step 0 of `scanPage` and pre-seeds the dedup `seen` set with the user's own contacts.
+- **Phone proximity anchor for loose-body scans.** Random snippet phones on Google search results, business directories, social feeds were being surfaced because the body `innerText` scan saw a 10-digit shape and pushed it. Phones from loose-body scans now require at least one of ~35 contact-context keywords (`contact`, `support`, `call us`, `toll free`, `tech support`, `main office`, etc.) within +/-100 chars.
+- **Email domain-fit signal.** New `domainFitScore(email)` compares the email's host against the page we're currently on. +20 for matching site host (subdomain-aware), -25 for public-mailbox emails (gmail, outlook, yahoo, icloud) on a corporate site, -10 for mismatched corporate hosts. Folded into `scoreEmail` so the side panel naturally re-ranks results.
+
+**Side panel UX:**
+
+- **Vertical-only draggable tab.** The pull-tab was anchored at `top: 30%`. For workflows where that landed on top of a frequently-clicked region of a site (sticky nav, floating "back to top" buttons, sidebar headers), the tab sat in the user's way. Now: mousedown on the tab, drag up or down, release. Position persists across tabs and sessions via `chrome.storage.local.fmp_side_panel_tab_top`. 4 px threshold separates click-to-expand from drag-to-reposition; trailing click suppressed via a 50 ms grace flag.
+- **Hours-aware contact recommendation.** When the business is closed and we have an email, a small amber tip appears under the hours banner: "Closed now -- email is your best bet off-hours." Phone calls during closed hours go to voicemail; email is the higher-yield channel.
+- **Provenance label + tooltip per row.** Each email / phone row now shows a short visible source label between "Click to copy" and the score badge (e.g. `mailto link`, `site-known`, `chatbot intercom`, `press release`, `Zendesk KB`). Hover any row to see the full context string as a tooltip. Builds trust by making the reasoning visible -- a high-score result from a `mailto:` link reads very differently from a high-score result via free-text scan.
+
+**Messaging:**
+
+- **Manifest description rewritten** for the Web Store / AMO listing: "Bypass chatbots. Reads the chatbot's own knowledge base to surface real customer service contacts. 100% local, no account."
+- **README intro updated** to name the 10 chatbot vendors detected and state the bypass mechanism.
+- **`PRIVACY_POLICY.md` accuracy pass.** The previous policy said "the extension makes zero network requests." That stopped being true when the same-origin fallback fetch shipped earlier in the 1.5 line. The rewritten policy enumerates the **two** anonymous network-request paths the extension actually makes (same-origin contact-page fetches + Zendesk help-center search) with full constraints per path.
+
 ### 1.5.2 -- 2026-06-01
 
 Scan-quality patch driven by two bugs an early Product Hunt user reported using https://www.thesanctuarygym.com/ as a control page. No new features; the side panel just produces cleaner results on sites that mix formatting variants or stack contact info across adjacent DOM blocks.
