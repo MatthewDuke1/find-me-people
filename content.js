@@ -320,6 +320,22 @@
       fetchZendeskHelpCenter(zendeskSub, results, seen);
     }
 
+    // 7b. Same idea for Freshdesk-powered help centers / Freshchat widgets.
+    // Public solutions search returns article excerpts; we grep them for
+    // contact info the chatbot was deflecting from.
+    const freshdeskHost = detectFreshdeskHost();
+    if (freshdeskHost) {
+      fetchFreshdeskHelpCenter(freshdeskHost, results, seen);
+    }
+
+    // 7c. Crisp Helpdesk uses a public website-keyed help center at
+    // help.crisp.chat/<website-id-or-slug>. When we've identified the
+    // workspace in scanChatbotVendors, query the public article list.
+    const crispWorkspace = detectCrispWorkspace();
+    if (crispWorkspace) {
+      fetchCrispHelpdesk(crispWorkspace, results, seen);
+    }
+
     return results;
   }
 
@@ -2098,6 +2114,254 @@
       results.emails.sort((a, b) => b.score - a.score);
       results.phones.sort((a, b) => b.score - a.score);
       // Push an updated badge so the toolbar reflects the new finds.
+      const total = results.emails.length + results.phones.length;
+      try {
+        chrome.runtime.sendMessage({ action: "updateBadge", count: total }).catch(() => {});
+      } catch (_) {}
+    }
+  }
+
+  // ====================================================================
+  // FRESHDESK + CRISP HELPDESK KB SEARCH
+  //
+  // Same idea as fetchZendeskHelpCenter (PR #31): when a chatbot vendor's
+  // public knowledge base is reachable via a known URL pattern, fetch
+  // the contact / support articles directly and grep them for emails and
+  // phones. The bot the user sees in the widget is a thin RAG layer over
+  // these very articles -- reading them returns the same contact info
+  // without any chat-UI interaction.
+  //
+  // Per-vendor detail differs because each vendor's help-center URLs
+  // and response shapes are different. Common contract for all three
+  // helpers:
+  //
+  //   - Once-per-key-per-session sessionStorage gate
+  //   - credentials: 'same-origin' (matches the rest of our background
+  //     fetches; sends user cookies for the SAME origin only, no
+  //     cross-site tracking)
+  //   - Response body cap 1 MB before parse
+  //   - Fire-and-forget; results merged in place; badge re-pushed
+  //   - Found contacts use canonical phoneKey / trimDigitPrefixBleed
+  //     dedup helpers so duplicates against the in-page scan collapse
+  //   - Score floor 95 -- KB articles are the company's own curated
+  //     support documentation
+  // ====================================================================
+
+  // Identify a Freshdesk help-center host. Three signals:
+  //   1. Current host matches "{slug}.freshdesk.com" (the user is on
+  //      a Freshdesk help center directly)
+  //   2. A <script src=... freshdesk.com/...> on the page exposes the
+  //      slug (Freshchat widget loads its scripts from there)
+  //   3. The detected chatbot in scanChatbotVendors flagged Freshchat
+  //      (window.fcSettings.host carries the subdomain)
+  function detectFreshdeskHost() {
+    try {
+      const hostMatch = window.location.hostname.match(/^([a-z0-9-]+)\.freshdesk\.com$/i);
+      if (hostMatch) return hostMatch[1].toLowerCase();
+    } catch (_) {}
+    const scripts = document.querySelectorAll('script[src*="freshdesk"], script[src*="freshchat"]');
+    for (let i = 0; i < scripts.length; i++) {
+      const src = scripts[i].src || "";
+      const m = src.match(/\/\/([a-z0-9-]+)\.freshdesk\.com\//i);
+      if (m) return m[1].toLowerCase();
+    }
+    return null;
+  }
+
+  // Identify a Crisp workspace ID. Crisp's chatbot scanner already
+  // surfaces window.CRISP_WEBSITE_ID; this just reads it directly so
+  // the fetch path can run without depending on chatbot scan side-
+  // effects.
+  function detectCrispWorkspace() {
+    // The chatbot scanner stashes the website_id in results.links via
+    // the help-center URL; here we re-read the global directly through
+    // the same page-world bridge pattern, but inline + lightweight.
+    try {
+      const hostMatch = window.location.hostname.match(/^help\.crisp\.chat$/i);
+      if (hostMatch) {
+        // We're ON help.crisp.chat -- the slug is in the path
+        const slugMatch = (window.location.pathname || "").match(/^\/([a-z0-9-]+)(?:\/|$)/i);
+        if (slugMatch) return slugMatch[1].toLowerCase();
+      }
+    } catch (_) {}
+    // Look for the Crisp Chat snippet's website_id in script tags
+    const scripts = document.querySelectorAll('script');
+    for (let i = 0; i < scripts.length; i++) {
+      const txt = scripts[i].textContent || "";
+      const m = txt.match(/CRISP_WEBSITE_ID\s*=\s*["']([a-z0-9-]+)["']/i);
+      if (m) return m[1].toLowerCase();
+    }
+    return null;
+  }
+
+  // Fetch the Freshdesk solutions / articles search results and merge
+  // any contacts found. Tries the v2 search endpoint first (returns
+  // JSON); falls back to the public /support/search/solutions HTML page.
+  async function fetchFreshdeskHelpCenter(slug, results, seen) {
+    if (!slug || typeof slug !== "string") return;
+    try {
+      const CACHE_KEY = "__fmp_freshdesk_searched_" + slug;
+      if (sessionStorage.getItem(CACHE_KEY)) return;
+      sessionStorage.setItem(CACHE_KEY, "1");
+    } catch (_) {
+      return;
+    }
+
+    const candidates = [
+      "https://" + slug + ".freshdesk.com/api/v2/search/solutions?term=contact",
+      "https://" + slug + ".freshdesk.com/support/search/solutions?term=contact",
+    ];
+
+    let text = null;
+    for (const url of candidates) {
+      try {
+        const resp = await fetch(url, {
+          credentials: "same-origin",
+          redirect: "follow",
+          cache: "no-cache",
+        });
+        if (!resp.ok) continue;
+        const body = await resp.text();
+        if (!body || body.length > 1024 * 1024) continue;
+        text = body;
+        break;
+      } catch (_) { /* try next */ }
+    }
+    if (!text) return;
+
+    // JSON shape (v2/search/solutions): array of objects with title +
+    // description. HTML shape: standard Freshdesk solutions page with
+    // article excerpts in <div class="article-body"> tags.
+    let stripped = text;
+    if (text.trim().startsWith("[") || text.trim().startsWith("{")) {
+      try {
+        const json = JSON.parse(text);
+        const items = Array.isArray(json) ? json : (json.results || []);
+        stripped = items
+          .map((a) => (a.title || "") + " " + (a.description || a.description_text || ""))
+          .join(" ");
+      } catch (_) { /* fall through to HTML strip */ }
+    }
+    if (stripped === text) {
+      // HTML body: strip tags + entities
+      stripped = text
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&amp;/gi, "&")
+        .replace(/&lt;/gi, "<")
+        .replace(/&gt;/gi, ">")
+        .replace(/\s+/g, " ");
+    }
+
+    const context = "Freshdesk KB";
+    const ctxSource = "freshdesk-kb:" + slug;
+    mergeKBContactsFromText(stripped, context, ctxSource, results, seen);
+  }
+
+  // Fetch Crisp's public help center articles list (the index page is
+  // server-rendered HTML; we strip tags and scan).
+  async function fetchCrispHelpdesk(workspace, results, seen) {
+    if (!workspace || typeof workspace !== "string") return;
+    try {
+      const CACHE_KEY = "__fmp_crisp_searched_" + workspace;
+      if (sessionStorage.getItem(CACHE_KEY)) return;
+      sessionStorage.setItem(CACHE_KEY, "1");
+    } catch (_) {
+      return;
+    }
+
+    // help.crisp.chat is a CDN-cached static help-center host. The
+    // index page lists categorized articles; specific contact-related
+    // articles live at /<workspace>/en/category/contact.
+    const candidates = [
+      "https://help.crisp.chat/" + workspace + "/en/",
+      "https://help.crisp.chat/" + workspace + "/",
+    ];
+
+    let text = null;
+    for (const url of candidates) {
+      try {
+        const resp = await fetch(url, {
+          credentials: "same-origin",
+          redirect: "follow",
+          cache: "no-cache",
+        });
+        if (!resp.ok) continue;
+        try {
+          if (new URL(resp.url).origin !== "https://help.crisp.chat") continue;
+        } catch (_) { continue; }
+        const body = await resp.text();
+        if (!body || body.length > 1024 * 1024) continue;
+        text = body;
+        break;
+      } catch (_) { /* try next */ }
+    }
+    if (!text) return;
+
+    const stripped = text
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/\s+/g, " ");
+
+    const context = "Crisp Helpdesk";
+    const ctxSource = "crisp-kb:" + workspace;
+    mergeKBContactsFromText(stripped, context, ctxSource, results, seen);
+  }
+
+  // Shared extraction helper for KB-style stripped text. Same scoring
+  // floor (95) and dedup helpers the Zendesk path uses.
+  function mergeKBContactsFromText(stripped, context, sourceTag, results, seen) {
+    let added = 0;
+    const emailMatches = stripped.match(EMAIL_REGEX) || [];
+    emailMatches.forEach((email) => {
+      email = trimDigitPrefixBleed(email.toLowerCase());
+      if (seen.has(email)) return;
+      if (
+        email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
+        email.includes("sentry") || email.includes("webpack") ||
+        email.includes("example.com") || email.includes("noreply") ||
+        email.includes("no-reply")
+      ) return;
+      seen.add(email);
+      results.emails.push({
+        value: email,
+        context,
+        score: Math.max(95, scoreEmail(email, context)),
+        source: sourceTag,
+      });
+      added++;
+    });
+
+    const phoneMatches = [
+      ...(stripped.match(PHONE_REGEX) || []),
+      ...(stripped.match(INTL_PHONE_REGEX) || []),
+    ];
+    phoneMatches.forEach((phone) => {
+      const cleaned = phone.replace(/[^\d+]/g, "");
+      if (cleaned.length < 10 || cleaned.length > 15) return;
+      const key = phoneKey(cleaned);
+      if (seen.has(key)) return;
+      if (!/[+\-.\s()]/.test(phone)) return;
+      seen.add(key);
+      results.phones.push({
+        value: formatPhone(phone),
+        context,
+        score: 95,
+        source: sourceTag,
+      });
+      added++;
+    });
+
+    if (added > 0) {
+      results.emails.sort((a, b) => b.score - a.score);
+      results.phones.sort((a, b) => b.score - a.score);
       const total = results.emails.length + results.phones.length;
       try {
         chrome.runtime.sendMessage({ action: "updateBadge", count: total }).catch(() => {});
