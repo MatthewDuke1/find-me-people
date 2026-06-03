@@ -2244,7 +2244,26 @@
     return h * 60 + min;
   }
 
-  function spRenderHoursBanner(hours) {
+  // Render a small "use email instead" tip under the hours banner when the
+  // business is closed and we have at least one email to surface. Phone
+  // calls during closed hours go to voicemail or hold queues; email is
+  // the higher-yield channel off-hours. If we have no email but do have a
+  // phone, no tip (the user already sees the phone in the next section).
+  function spRenderHoursAdvice(openNow, results) {
+    if (openNow !== false) return ""; // only render when explicitly closed
+    if (!results) return "";
+    const hasEmail = (results.emails || []).length > 0;
+    const hasPhone = (results.phones || []).length > 0;
+    if (hasEmail && hasPhone) {
+      return `<div class="hours-advice">&#9993; Closed now &mdash; email is your best bet off-hours.</div>`;
+    }
+    if (hasEmail) {
+      return `<div class="hours-advice">&#9993; Closed now &mdash; reach out by email.</div>`;
+    }
+    return "";
+  }
+
+  function spRenderHoursBanner(hours, results) {
     if (!hours || hours.length === 0) {
       return `
         <div class="hours-banner unknown">
@@ -2292,6 +2311,7 @@
           <div class="hb-detail">${spEscape(detail)}</div>
         </div>
       </div>`;
+    html += spRenderHoursAdvice(openNow, results);
     if (hours.length > 1) {
       const dseen = new Set();
       const rows = [];
@@ -2439,7 +2459,7 @@
     } else {
       // ----- "On this page" view: hours banner + email + phone + support -----
       html += `<div class="status">${total > 0 ? `Found ${total} contact${totalSuffix} on this page` : "No contacts found"}</div>`;
-      html += spRenderHoursBanner(currentResults.hours || []);
+      html += spRenderHoursBanner(currentResults.hours || [], currentResults);
       html += `<div class="scroll">`;
 
       if (currentResults.emails.length) {
@@ -2809,6 +2829,14 @@
     .hours-banner.unknown {
       background: rgba(161,161,170,0.06);
       border-color: rgba(161,161,170,0.2);
+    }
+    .hours-advice {
+      margin: 8px 14px 0; padding: 8px 12px;
+      font-size: 12.5px; color: #fde68a;
+      background: rgba(252,211,77,0.07);
+      border: 1px solid rgba(252,211,77,0.18);
+      border-radius: 6px;
+      display: flex; align-items: center; gap: 8px;
     }
     .hb-pulse {
       width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
