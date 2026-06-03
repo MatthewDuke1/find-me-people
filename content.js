@@ -163,6 +163,65 @@
       }
     });
 
+    // 1b. Obfuscation-buster pass. Sites that don't want bots scraping
+    // contact info rely on common defenses; here are the ones we defeat:
+    //   - Cloudflare email protection: <a data-cfemail="HEX"> + JS decode
+    //   - data-email attribute (plain or with HTML entities)
+    //   - aria-label / title attributes containing "Email: ..."
+    //   - HTML entity-encoded emails in attribute values
+    document.querySelectorAll("[data-cfemail]").forEach((el) => {
+      const email = decodeCfEmail(el.getAttribute("data-cfemail"));
+      if (!email || !email.includes("@")) return;
+      const lower = email.toLowerCase();
+      if (seen.has(lower)) return;
+      seen.add(lower);
+      results.emails.push({
+        value: lower,
+        context: getContext(el),
+        score: scoreEmail(lower, getContext(el)),
+        source: "cf",
+      });
+    });
+
+    document.querySelectorAll("[data-email], [data-mail]").forEach((el) => {
+      const raw = (el.getAttribute("data-email") || el.getAttribute("data-mail") || "").trim();
+      // Some sites store user@example.com, others "user [at] example [dot] com",
+      // others HTML entities. decodeObfuscatedText handles all three -- it's
+      // the same decoder we use for free-text obfuscation in the main scan
+      // (defined at the top of the IIFE), just applied to one attribute value.
+      const decoded = decodeObfuscatedText(raw);
+      const match = decoded.match(EMAIL_REGEX);
+      if (!match) return;
+      const lower = match[0].toLowerCase();
+      if (seen.has(lower)) return;
+      seen.add(lower);
+      results.emails.push({
+        value: lower,
+        context: getContext(el),
+        score: scoreEmail(lower, getContext(el)),
+        source: "data-attr",
+      });
+    });
+
+    // aria-label and title attributes sometimes carry the email when the
+    // visible text is just an icon. e.g. <a aria-label="Email support">.
+    document.querySelectorAll("[aria-label], [title]").forEach((el) => {
+      const label = (el.getAttribute("aria-label") || el.getAttribute("title") || "");
+      if (!/@/.test(label)) return;
+      const matches = label.match(EMAIL_REGEX) || [];
+      matches.forEach((email) => {
+        const lower = email.toLowerCase();
+        if (seen.has(lower)) return;
+        seen.add(lower);
+        results.emails.push({
+          value: lower,
+          context: getContext(el),
+          score: scoreEmail(lower, getContext(el)),
+          source: "aria",
+        });
+      });
+    });
+
     // 2. Scan contact-likely sections
     //
     // innerText (not textContent) so block-level boundaries -- paragraphs,
@@ -2623,6 +2682,23 @@
     const digits = String(s).replace(/\D/g, "");
     if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
     return digits;
+  }
+
+  // Cloudflare email-protection decoder. The data-cfemail attribute is hex;
+  // first byte is the XOR key, each subsequent pair XORs against it to give
+  // one ASCII char. Same algorithm as the JS Cloudflare ships, equivalent
+  // result without depending on their script firing on the page.
+  function decodeCfEmail(encoded) {
+    if (!encoded || encoded.length < 4 || encoded.length % 2 !== 0) return null;
+    if (!/^[0-9a-fA-F]+$/.test(encoded)) return null;
+    try {
+      const key = parseInt(encoded.substring(0, 2), 16);
+      let email = "";
+      for (let i = 2; i < encoded.length; i += 2) {
+        email += String.fromCharCode(parseInt(encoded.substring(i, i + 2), 16) ^ key);
+      }
+      return email;
+    } catch (_) { return null; }
   }
 
   function formatPhone(phone) {
