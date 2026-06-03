@@ -3947,6 +3947,7 @@
     if (src === "address") return "address tag";
     if (src === "noscript") return "noscript";
     if (src === "form-value") return "form field";
+    if (src === "shadow") return "shadow DOM";
     return src || "page";
   }
 
@@ -3984,6 +3985,7 @@
     if (src === "address") return "Found inside an HTML <address> tag, the spec-defined container for contact info. The author specifically marked this block as canonical contact info -- a strong signal.";
     if (src === "noscript") return "Found inside a <noscript> fallback block. Sites commonly duplicate their canonical contact info there so JS-disabled clients (and SEO crawlers) can read it -- high signal-to-noise.";
     if (src === "form-value") return "Found in the value attribute of a form input (often a hidden field carrying the configured reply-to or contact address). Higher trust than free-text scans because the value was explicitly set in the HTML, not inferred from prose.";
+    if (src === "shadow") return "Found inside an open Shadow DOM root attached to a Web Component on the page. Cleaner sources outrank this when both are present.";
     return "Surfaced during the page scan; specific provenance not recorded.";
   }
 
