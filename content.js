@@ -163,6 +163,20 @@
       }
     });
 
+    // 1c. Scan open Shadow DOM roots on the page.
+    //
+    // querySelectorAll does NOT pierce shadow boundaries -- every other
+    // pass in this file is invisible to content rendered inside Web
+    // Components / Lit-based widgets / custom elements. As component-
+    // based UIs proliferate (Spotify embeds, YouTube, modern design-
+    // system widgets), this is an increasingly real gap. Closed shadow
+    // roots (mode: 'closed') stay opaque -- we can't get a reference --
+    // but those are rare on the open web.
+    //
+    // We carefully skip our OWN shadow root (the FMP side panel) so we
+    // don't recurse into our UI and find our own rendered chips/buttons.
+    scanShadowRoots(results, seen);
+
     // 2. Scan contact-likely sections
     //
     // innerText (not textContent) so block-level boundaries -- paragraphs,
@@ -594,6 +608,89 @@
         context,
         score: scorePhone(context),
         source: "globals",
+      });
+    });
+  }
+
+  // Recursively walk every open Shadow DOM root attached to the page
+  // (skipping our own side-panel host) and run the standard email/phone
+  // scans inside each. querySelectorAll does NOT pierce shadow boundaries
+  // by default, so without this pass every other scan is blind to Web
+  // Component / Lit / custom-element content.
+  //
+  // forEachOpenShadowRoot is the workhorse: walk the tree, collect every
+  // .shadowRoot we encounter, descend into the rendered children of each.
+  // SP_HOST_ID guard prevents the obvious self-recursion bug.
+  function forEachOpenShadowRoot(root, callback) {
+    const stack = [root];
+    while (stack.length) {
+      const node = stack.pop();
+      const all = node.querySelectorAll ? node.querySelectorAll("*") : [];
+      for (let i = 0; i < all.length; i++) {
+        const el = all[i];
+        const sr = el.shadowRoot;
+        if (!sr) continue;
+        // Skip our own UI -- the FMP panel and tab live in a shadow root
+        // whose host has id SP_HOST_ID. Recursing in finds our own
+        // rendered chips, which would surface us inside ourselves.
+        if (el.id === SP_HOST_ID) continue;
+        callback(sr);
+        stack.push(sr);
+      }
+    }
+  }
+
+  function scanShadowRoots(results, seen) {
+    forEachOpenShadowRoot(document, (sr) => {
+      // mailto: links inside the shadow root
+      sr.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
+        const email = el.href.replace("mailto:", "").split("?")[0].toLowerCase();
+        if (!seen.has(email) && email.includes("@")) {
+          seen.add(email);
+          const context = getContext(el);
+          results.emails.push({
+            value: email,
+            context,
+            score: scoreEmail(email, context),
+            source: "shadow",
+          });
+        }
+      });
+
+      // tel: links inside the shadow root
+      sr.querySelectorAll('a[href^="tel:"]').forEach((el) => {
+        const phone = el.href.replace("tel:", "").replace(/\s/g, "");
+        const key = phoneKey(phone);
+        if (!seen.has(key) && phone.length >= 10) {
+          seen.add(key);
+          const context = getContext(el);
+          results.phones.push({
+            value: formatPhone(phone),
+            context,
+            score: 88,
+            source: "shadow",
+          });
+        }
+      });
+
+      // Free text of the shadow root -- run decodeObfuscatedText, then
+      // EMAIL_REGEX. Short-circuit if there's no shadow body or it has
+      // no text at all (common for purely structural components).
+      const text = sr.textContent || "";
+      if (!text || text.length < 4) return;
+      const decoded = decodeObfuscatedText(text);
+      const emailMatches = decoded.match(EMAIL_REGEX) || [];
+      emailMatches.forEach((email) => {
+        email = trimDigitPrefixBleed(email.toLowerCase());
+        if (seen.has(email)) return;
+        seen.add(email);
+        const context = "in shadow DOM";
+        results.emails.push({
+          value: email,
+          context,
+          score: Math.max(40, scoreEmail(email, context) - 10),
+          source: "shadow",
+        });
       });
     });
   }
