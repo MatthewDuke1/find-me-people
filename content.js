@@ -163,6 +163,18 @@
       }
     });
 
+    // 1c. Scan inline <script> body text. Complements scanPageGlobals():
+    //
+    // scanPageGlobals injects a bridge to JSON.stringify a known list of
+    // framework hydration objects (__NEXT_DATA__, __INITIAL_STATE__, etc.).
+    // That misses two cases:
+    //   - Sites whose state lives under a variable name not in the list.
+    //   - Strict-CSP sites where bridge injection is blocked (script-src
+    //     'none' / 'self' without 'unsafe-inline').
+    // Reading <script>.textContent directly works under strict CSP and
+    // covers any inline body, regardless of framework convention.
+    scanInlineScriptBodies(results, seen);
+
     // 2. Scan contact-likely sections
     //
     // innerText (not textContent) so block-level boundaries -- paragraphs,
@@ -594,6 +606,59 @@
         context,
         score: scorePhone(context),
         source: "globals",
+      });
+    });
+  }
+
+  // Scan inline <script> tag text directly. Catches contact info that
+  // scanPageGlobals misses: framework-state-style assignments under
+  // non-standard variable names, raw string literals (const SUPPORT_EMAIL
+  // = "..."), config objects scattered through inline bodies, and
+  // everything on strict-CSP sites where the globals bridge gets blocked.
+  //
+  // Skip rules:
+  //   - script[src] (external -- we don't have the body, browser handles fetch)
+  //   - script[type="application/ld+json"] (extractJsonLdContacts owns this)
+  //   - empty / single-line bootloader scripts
+  //   - extremely large scripts (>500KB; minified vendor bundles, perf hit
+  //     + noise dominate signal -- the page-globals bridge already caught
+  //     anything load-bearing from the bundle)
+  function scanInlineScriptBodies(results, seen) {
+    const MAX_SCRIPT_BYTES = 500000;
+    document.querySelectorAll("script").forEach((script) => {
+      if (script.src) return;
+      const type = (script.getAttribute("type") || "").toLowerCase();
+      if (type === "application/ld+json") return;
+      const text = script.textContent;
+      if (!text || text.length > MAX_SCRIPT_BYTES) return;
+
+      // Run the same prose-obfuscation decoder we use for body text -- some
+      // inline scripts embed contact info as encoded strings (HTML entities
+      // in attribute fragments, fullwidth-at workarounds, etc.). For raw
+      // JS strings the decoder is a no-op pass through, so cost is bounded.
+      const decoded = decodeObfuscatedText(text);
+
+      const emailMatches = decoded.match(EMAIL_REGEX) || [];
+      emailMatches.forEach((email) => {
+        email = trimDigitPrefixBleed(email.toLowerCase());
+        if (seen.has(email)) return;
+        // Same noise filters scanPageGlobals applies -- minified bundles
+        // are full of asset-path-shaped strings and SDK error reporters
+        // that look like emails but aren't actionable.
+        if (
+          email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
+          email.includes("sentry") || email.includes("webpack") ||
+          email.includes("example.com") || email.includes("@2x") ||
+          email.includes("noreply") || email.includes("no-reply")
+        ) return;
+        seen.add(email);
+        const context = "from inline script";
+        results.emails.push({
+          value: email,
+          context,
+          score: scoreEmail(email, context),
+          source: "inline-script",
+        });
       });
     });
   }
@@ -3380,6 +3445,7 @@
     if (src === "data-attr" || src === "cf") return "decoded";
     if (src === "sitemap") return "sitemap";
     if (src === "text") return "page text";
+    if (src === "inline-script") return "inline script";
     return src || "page";
   }
 
@@ -3411,6 +3477,7 @@
     if (src === "data-attr" || src === "cf") return "Decoded from an obfuscated attribute (e.g. Cloudflare's data-cfemail anti-scraping encoding).";
     if (src === "sitemap") return "URL discovered via the site's /sitemap.xml. The site explicitly published this contact page; we fetched it directly.";
     if (src === "text") return "Free-text scan of the page body. Lower trust than direct mailto: / tel: links because context matters.";
+    if (src === "inline-script") return "Found in the text body of an inline <script> tag (page hydration state, config object, or string literal). Often the most reliable source on JS-heavy SPAs where the DOM is empty until JS runs.";
     return "Surfaced during the page scan; specific provenance not recorded.";
   }
 
