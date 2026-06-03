@@ -163,6 +163,17 @@
       }
     });
 
+    // 1c. Scan JSON-LD structured data for spec-defined contact points.
+    //
+    // Schema.org's Organization / LocalBusiness / Person types declare
+    // contact info under `email`, `telephone`, and `contactPoint`. Sites
+    // that mark up properly are giving us their actual support contact in
+    // a parseable, machine-readable form -- highest possible confidence.
+    // We mirror the JSON-LD-driven hours-extraction pattern below for
+    // email + phone, descending into @graph, contactPoint arrays, and
+    // nested types.
+    extractJsonLdContacts(results, seen);
+
     // 2. Scan contact-likely sections
     //
     // innerText (not textContent) so block-level boundaries -- paragraphs,
@@ -405,6 +416,85 @@
     results.hours.sort((a, b) => b.score - a.score);
     // Cap at 7 entries (one per day)
     results.hours = results.hours.slice(0, 7);
+  }
+
+  // Scan every <script type="application/ld+json"> on the page and walk
+  // each parsed graph looking for email / telephone fields. The infra
+  // mirrors extractHours -- same JSON.parse, same array-or-single
+  // normalization, same recursive descent. Score is the highest in the
+  // file (98) because the value is spec-defined by the site author, not
+  // inferred from text.
+  function extractJsonLdContacts(results, seen) {
+    document.querySelectorAll('script[type="application/ld+json"]').forEach((script) => {
+      try {
+        const data = JSON.parse(script.textContent);
+        const items = Array.isArray(data) ? data : [data];
+        items.forEach((item) => collectSchemaContacts(item, results, seen));
+      } catch (_) {}
+    });
+  }
+
+  // Recursively walk a Schema.org graph node collecting email / telephone.
+  // Handles the three shapes that 99% of real-world JSON-LD uses:
+  //   - Direct properties: { "email": "...", "telephone": "..." }
+  //   - Array forms:       { "email": ["a@x.com", "b@x.com"] }
+  //   - contactPoint:      { "contactPoint": [{ "email": "...", "telephone": "..." }, ...] }
+  //   - @graph top-level:  { "@graph": [{...}, {...}] }
+  // Descends into every object-valued property so deeply nested types
+  // (Organization -> subOrganization -> ContactPoint -> ...) get reached
+  // without us hard-coding every Schema.org type name.
+  function collectSchemaContacts(item, results, seen) {
+    if (!item || typeof item !== "object") return;
+
+    const pushEmail = (raw) => {
+      if (typeof raw !== "string") return;
+      const cleaned = raw.replace(/^mailto:/i, "").trim().toLowerCase();
+      if (!cleaned.includes("@") || !EMAIL_REGEX.test(cleaned)) {
+        EMAIL_REGEX.lastIndex = 0;
+        return;
+      }
+      EMAIL_REGEX.lastIndex = 0;
+      if (seen.has(cleaned)) return;
+      seen.add(cleaned);
+      results.emails.push({
+        value: cleaned,
+        context: "Schema.org JSON-LD",
+        score: 98,
+        source: "json-ld",
+      });
+    };
+
+    const pushPhone = (raw) => {
+      if (typeof raw !== "string") return;
+      const cleaned = raw.replace(/^tel:/i, "").trim();
+      const digits = cleaned.replace(/\D/g, "");
+      if (digits.length < 10) return;
+      const key = phoneKey(cleaned);
+      if (seen.has(key)) return;
+      seen.add(key);
+      results.phones.push({
+        value: formatPhone(cleaned),
+        context: "Schema.org JSON-LD",
+        score: 95,
+        source: "json-ld",
+      });
+    };
+
+    if (item.email) {
+      (Array.isArray(item.email) ? item.email : [item.email]).forEach(pushEmail);
+    }
+    if (item.telephone) {
+      (Array.isArray(item.telephone) ? item.telephone : [item.telephone]).forEach(pushPhone);
+    }
+
+    // Recurse into every object-valued property. This catches @graph,
+    // contactPoint, contactPoints (plural variant some sites use),
+    // subOrganization, department, parentOrganization, member, etc.,
+    // without us maintaining a list of Schema.org type names.
+    Object.values(item).forEach((v) => {
+      if (Array.isArray(v)) v.forEach((nested) => collectSchemaContacts(nested, results, seen));
+      else if (v && typeof v === "object") collectSchemaContacts(v, results, seen);
+    });
   }
 
   function collectSchemaHours(item, results, hoursSeen) {
@@ -3380,6 +3470,7 @@
     if (src === "data-attr" || src === "cf") return "decoded";
     if (src === "sitemap") return "sitemap";
     if (src === "text") return "page text";
+    if (src === "json-ld") return "schema.org";
     return src || "page";
   }
 
@@ -3411,6 +3502,7 @@
     if (src === "data-attr" || src === "cf") return "Decoded from an obfuscated attribute (e.g. Cloudflare's data-cfemail anti-scraping encoding).";
     if (src === "sitemap") return "URL discovered via the site's /sitemap.xml. The site explicitly published this contact page; we fetched it directly.";
     if (src === "text") return "Free-text scan of the page body. Lower trust than direct mailto: / tel: links because context matters.";
+    if (src === "json-ld") return "Schema.org JSON-LD structured data. The site author declared this as a spec-defined contact point in machine-readable form -- the highest-confidence signal short of a direct mailto: / tel: link.";
     return "Surfaced during the page scan; specific provenance not recorded.";
   }
 
