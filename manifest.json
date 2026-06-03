@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Find Me People",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "description": "Bypass chatbots. Reads the chatbot's own knowledge base to surface real customer service contacts. 100% local, no account.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["<all_urls>"],
