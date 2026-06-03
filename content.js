@@ -3383,6 +3383,47 @@
     return src || "page";
   }
 
+  // Longer human-readable description of where a contact came from. Used
+  // by the confidence-explanation expansion (info button on each row).
+  // Single sentence per source category, explains both what we did to
+  // find it and why that signal should be trusted (or not).
+  function spProvenanceDescription(item) {
+    if (!item) return "";
+    const src = String(item.source || "").toLowerCase();
+    if (src === "mailto") return "Direct mailto: link in the page HTML -- the highest-confidence signal there is. Someone explicitly authored it as a contact channel.";
+    if (src === "tel") return "Direct tel: link in the page HTML. Same confidence as mailto -- explicitly authored as a contact channel.";
+    if (src === "meta") return "Page meta tag (Open Graph, Facebook business properties, or IndieWeb rel=me). Author-declared metadata; high trust.";
+    if (src === "press") return "Press release / media-contact block. Companies specifically declare PR contacts in these blocks; high trust.";
+    if (src === "footer") return "Footer with a labeled field (\"Toll Free:\", \"Sales:\", etc.). Footer contact info is conventionally canonical.";
+    if (src === "site-override") return "Curated entry in the extension's known-contact registry. Verified by the maintainer with a 'last verified' date stamp.";
+    if (src === "globals") return "Page hydration state -- JSON-LD, schema.org, or framework state objects like __NEXT_DATA__. Author-declared structured data.";
+    if (src.indexOf("chatbot:") === 0) {
+      const vendor = src.slice("chatbot:".length);
+      return "Found in the page's " + vendor + " chatbot widget config. The vendor's SDK exposed it on the page state.";
+    }
+    if (src === "appstore:apple") return "Apple App Store developer-contact section. Store policy requires developers to publish a working contact email.";
+    if (src === "appstore:play") return "Google Play Store developer-contact section. Store policy requires developers to publish a working contact email.";
+    if (src.indexOf("zendesk-kb:") === 0) return "Inside a Zendesk Help Center article. The company curated this article as public support documentation.";
+    if (src.indexOf("freshdesk-kb:") === 0) return "Inside a Freshdesk solutions / knowledge-base article. Curated public support documentation.";
+    if (src.indexOf("crisp-kb:") === 0) return "Inside a Crisp Helpdesk article. Curated public support documentation.";
+    if (src === "fetch" || src === "discovered-page") return "Found by background-fetching a contact-page link the in-page scan discovered (/contact, /support, /media-contacts, etc.).";
+    if (src === "iframe-mailto" || src === "iframe-tel") return "Found inside a same-origin embedded iframe (e.g. an embedded support widget).";
+    if (src === "data-attr" || src === "cf") return "Decoded from an obfuscated attribute (e.g. Cloudflare's data-cfemail anti-scraping encoding).";
+    if (src === "sitemap") return "URL discovered via the site's /sitemap.xml. The site explicitly published this contact page; we fetched it directly.";
+    if (src === "text") return "Free-text scan of the page body. Lower trust than direct mailto: / tel: links because context matters.";
+    return "Surfaced during the page scan; specific provenance not recorded.";
+  }
+
+  // Short explanation of what a numeric score means in plain English.
+  function spScoreInterpretation(score) {
+    const s = Number(score) || 0;
+    if (s >= 100) return "Verified mailto/tel link -- as high confidence as we have.";
+    if (s >= 90)  return "Highly likely to be a real support contact.";
+    if (s >= 70)  return "Likely support contact, in a contact-related context.";
+    if (s >= 40)  return "Possible match; not strongly contextualized as support.";
+    return "Low-confidence match; verify manually before relying on it.";
+  }
+
   function spBuildBody(currentResults, currentClient, history) {
     const total = currentResults.emails.length + currentResults.phones.length;
     const totalSuffix = total === 1 ? "" : "s";
@@ -3434,6 +3475,10 @@
           ).join("");
           const prov = spProvenanceLabel(e);
           const tipText = spEscape(e.context || prov);
+          const provDesc = spEscape(spProvenanceDescription(e));
+          const scoreInterp = spEscape(spScoreInterpretation(e.score));
+          const ctxFull = spEscape(e.context || "");
+          const infoId = `email-info-${idx}`;
           html += `
             <div class="row">
               <div class="row-main" data-sp-copy="${escVal}" data-sp-copy-type="email" data-sp-copy-score="${e.score}" title="${tipText}">
@@ -3442,7 +3487,15 @@
                   <span>Click to copy</span>
                   ${prov ? `<span class="provenance">&middot; ${spEscape(prov)}</span>` : ""}
                   <span class="score score-${sc}">${lbl}</span>
+                  <button class="info-btn" data-sp-info="${infoId}" title="Why this score?">&#9432;</button>
                 </div>
+              </div>
+              <div class="info-panel" data-sp-info-panel="${infoId}">
+                <div class="info-label">Where we found it</div>
+                <div class="info-value">${provDesc}</div>
+                ${ctxFull ? `<div class="info-label">Context</div><div class="info-value mono">${ctxFull}</div>` : ""}
+                <div class="info-label">Score &middot; ${e.score} / 100</div>
+                <div class="info-value">${scoreInterp}</div>
               </div>
               <button class="row-toggle" data-sp-toggle="${rowId}">Compose <span class="caret">&#9662;</span></button>
               <div class="row-actions" data-sp-panel="${rowId}">
@@ -3467,6 +3520,10 @@
           ).join("");
           const prov = spProvenanceLabel(p);
           const tipText = spEscape(p.context || prov);
+          const provDesc = spEscape(spProvenanceDescription(p));
+          const scoreInterp = spEscape(spScoreInterpretation(p.score));
+          const ctxFull = spEscape(p.context || "");
+          const infoId = `phone-info-${idx}`;
           html += `
             <div class="row">
               <div class="row-main" data-sp-copy="${escVal}" data-sp-copy-type="phone" data-sp-copy-score="${p.score}" title="${tipText}">
@@ -3475,7 +3532,15 @@
                   <span>Click to copy</span>
                   ${prov ? `<span class="provenance">&middot; ${spEscape(prov)}</span>` : ""}
                   <span class="score score-${sc}">${lbl}</span>
+                  <button class="info-btn" data-sp-info="${infoId}" title="Why this score?">&#9432;</button>
                 </div>
+              </div>
+              <div class="info-panel" data-sp-info-panel="${infoId}">
+                <div class="info-label">Where we found it</div>
+                <div class="info-value">${provDesc}</div>
+                ${ctxFull ? `<div class="info-label">Context</div><div class="info-value mono">${ctxFull}</div>` : ""}
+                <div class="info-label">Score &middot; ${p.score} / 100</div>
+                <div class="info-value">${scoreInterp}</div>
               </div>
               <button class="row-toggle" data-sp-toggle="${rowId}">Call <span class="caret">&#9662;</span></button>
               <div class="row-actions" data-sp-panel="${rowId}">
@@ -3658,6 +3723,33 @@
     .row-toggle.open .caret { transform: rotate(180deg); }
     .row-actions { margin-top: 6px; display: none; }
     .row-actions.open { display: block; }
+    .info-btn {
+      background: none; border: none; cursor: pointer; padding: 0 0 0 4px;
+      color: #71717a; font-size: 12px; line-height: 1; font-family: inherit;
+      transition: color 0.15s;
+    }
+    .info-btn:hover, .info-btn.open { color: #fafafa; }
+    .info-panel {
+      margin-top: 8px; padding: 10px 12px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      display: none;
+      font-size: 12px; color: #d4d4d8; line-height: 1.55;
+    }
+    .info-panel.open { display: block; }
+    .info-label {
+      font-size: 10px; font-weight: 700; color: #71717a;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 3px;
+    }
+    .info-label + .info-value { margin-bottom: 8px; }
+    .info-value:last-child { margin-bottom: 0; }
+    .info-value.mono {
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 11px; color: #a1a1aa;
+      word-break: break-word;
+    }
     .client-picker {
       display: flex;
       flex-wrap: wrap;
@@ -4009,6 +4101,20 @@
         e.stopPropagation();
         const id = btn.getAttribute("data-sp-toggle");
         const panel = shadow.querySelector(`[data-sp-panel="${id}"]`);
+        if (panel) {
+          panel.classList.toggle("open");
+          btn.classList.toggle("open");
+        }
+      });
+    });
+
+    // Per-row info-button expand/collapse (confidence explanation panel)
+    shadow.querySelectorAll("[data-sp-info]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const id = btn.getAttribute("data-sp-info");
+        const panel = shadow.querySelector(`[data-sp-info-panel="${id}"]`);
         if (panel) {
           panel.classList.toggle("open");
           btn.classList.toggle("open");
