@@ -8,6 +8,50 @@
   const PHONE_REGEX = /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
   const INTL_PHONE_REGEX = /\+\d{1,3}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{2,4}[-.\s]?\d{2,4}[-.\s]?\d{0,4}/g;
 
+  // Common email obfuscation patterns that scrapers don't recognize but a
+  // human reader does. We pre-process text through this normalizer
+  // BEFORE running EMAIL_REGEX, so a line like
+  //   "Contact: jane (at) acme (dot) com"
+  // gets matched as jane@acme.com just like a plain "jane@acme.com"
+  // would. Conservative -- only replaces patterns wedged between word
+  // characters so prose like "the at sign" or "stop, at last" doesn't
+  // get mangled into a false-positive.
+  //
+  // Patterns handled:
+  //   user (at) host (dot) tld     -- parens
+  //   user [at] host [dot] tld     -- brackets
+  //   user {at} host {dot} tld     -- braces
+  //   user <at> host <dot> tld     -- angle brackets
+  //   user AT host DOT tld         -- bare keywords (any case), but
+  //                                   requires "at" and "dot" both to be
+  //                                   surrounded by whitespace and
+  //                                   between word chars, to avoid
+  //                                   false positives in prose
+  //   user%40host.tld              -- URL-encoded @
+  //   user&#64;host.tld            -- HTML-entity @
+  //   user＠host.tld                -- fullwidth/Unicode @ (U+FF20)
+  //   user_at_host_dot_tld         -- underscore-delimited (less common)
+  function decodeObfuscatedText(text) {
+    if (!text || typeof text !== "string") return text;
+    return text
+      // URL / HTML / Unicode @ first (these don't interact with parens)
+      .replace(/%40/g, "@")
+      .replace(/&#0*64;|&#x0*40;|&commat;/gi, "@")
+      .replace(/＠/g, "@")
+      // Bracketed at/dot (case-insensitive, optional whitespace inside)
+      .replace(/(\w)\s*[\[\(\{<]\s*at\s*[\]\)\}>]\s*(\w)/gi, "$1@$2")
+      .replace(/(\w)\s*[\[\(\{<]\s*dot\s*[\]\)\}>]\s*(\w)/gi, "$1.$2")
+      // Bare "at" / "dot" -- require word chars on both sides so we
+      // don't mangle prose ("send mail to jane at acme dot com")
+      .replace(/(\w)\s+at\s+(\w)/g, "$1@$2")
+      .replace(/(\w)\s+AT\s+(\w)/g, "$1@$2")
+      .replace(/(\w)\s+dot\s+(\w)/g, "$1.$2")
+      .replace(/(\w)\s+DOT\s+(\w)/g, "$1.$2")
+      // Underscore-delimited
+      .replace(/(\w)_at_(\w)/g, "$1@$2")
+      .replace(/(\w)_dot_(\w)/g, "$1.$2");
+  }
+
   // Keywords that indicate customer service / support context
   const SUPPORT_KEYWORDS = [
     "support", "customer service", "customer support", "help desk",
@@ -2063,8 +2107,12 @@
 
   function extractFromText(text, parentEl, results, seen, opts) {
     opts = opts || {};
+    // Decode common email obfuscation patterns BEFORE running EMAIL_REGEX
+    // so "jane (at) acme (dot) com", "user%40host.tld",
+    // "team&#64;host.tld", "team＠host.tld", and similar all match.
+    const normalized = decodeObfuscatedText(text);
     // Emails
-    const emailMatches = text.match(EMAIL_REGEX) || [];
+    const emailMatches = normalized.match(EMAIL_REGEX) || [];
     emailMatches.forEach((email) => {
       email = trimDigitPrefixBleed(email.toLowerCase());
       if (
