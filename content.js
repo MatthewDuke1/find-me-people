@@ -3477,6 +3477,7 @@
     if (src === "data-attr" || src === "cf") return "decoded";
     if (src === "sitemap") return "sitemap";
     if (src === "text") return "page text";
+    if (src === "shadow") return "shadow DOM";
     return src || "page";
   }
 
@@ -3508,6 +3509,7 @@
     if (src === "data-attr" || src === "cf") return "Decoded from an obfuscated attribute (e.g. Cloudflare's data-cfemail anti-scraping encoding).";
     if (src === "sitemap") return "URL discovered via the site's /sitemap.xml. The site explicitly published this contact page; we fetched it directly.";
     if (src === "text") return "Free-text scan of the page body. Lower trust than direct mailto: / tel: links because context matters.";
+    if (src === "shadow") return "Found inside an open Shadow DOM root attached to a Web Component on the page. Cleaner sources outrank this when both are present.";
     return "Surfaced during the page scan; specific provenance not recorded.";
   }
 
