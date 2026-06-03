@@ -3585,12 +3585,14 @@
                 <div class="info-label">Score &middot; ${p.score} / 100</div>
                 <div class="info-value">${scoreInterp}</div>
               </div>
-              <button class="row-toggle" data-sp-toggle="${rowId}">Call <span class="caret">&#9662;</span></button>
+              <div class="row-buttons">
+                <button class="row-toggle" data-sp-toggle="${rowId}">Call <span class="caret">&#9662;</span></button>
+                <button class="row-toggle vcard-btn" data-sp-save-vcard="phone" data-sp-value="${escVal}" data-sp-e164="${escE164}" title="Save as .vcf contact">&#11015; .vcf</button>
+              </div>
               <div class="row-actions" data-sp-panel="${rowId}">
                 <div class="chips">${voipChips}</div>
               </div>
             </div>
-<<<<<<< HEAD
           `;
         });
         html += `</div>`;
@@ -3602,19 +3604,6 @@
       html += spRenderSupportLinks(currentResults.links || []);
 
       html += `</div>`; // end .scroll
-=======
-            <div class="row-buttons">
-              <button class="row-toggle" data-sp-toggle="${rowId}">Call <span class="caret">&#9662;</span></button>
-              <button class="row-toggle vcard-btn" data-sp-save-vcard="phone" data-sp-value="${escVal}" data-sp-e164="${escE164}" title="Save as .vcf contact">&#11015; .vcf</button>
-            </div>
-            <div class="row-actions" data-sp-panel="${rowId}">
-              <div class="chips">${voipChips}</div>
-            </div>
-          </div>
-        `;
-      });
-      html += `</div>`;
->>>>>>> 2125c6b (Add "Save .vcf" download for emails and phones (popup + side panel))
     }
 
     // ----- Shared footer (both views): Rescan / Hide / Rate -----
