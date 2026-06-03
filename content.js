@@ -1917,6 +1917,64 @@
     return text;
   }
 
+  // Public-mailbox host suffixes. An email at one of these domains is
+  // someone's personal address -- legitimately useful when it's literally
+  // the business owner's contact, but on a corporate site it's almost
+  // certainly bleed (a footer "Built by Jane <jane@gmail.com>", a press
+  // article quote, a customer review). Used by the domain-fit signal in
+  // scoreEmail.
+  const PUBLIC_MAILBOX_HOSTS = new Set([
+    "gmail.com", "googlemail.com",
+    "outlook.com", "hotmail.com", "live.com", "msn.com",
+    "yahoo.com", "yahoo.co.uk", "ymail.com", "rocketmail.com",
+    "aol.com", "icloud.com", "me.com", "mac.com",
+    "protonmail.com", "proton.me",
+    "zoho.com", "yandex.com", "yandex.ru",
+    "gmx.com", "gmx.de", "mail.com",
+    "qq.com", "163.com", "126.com",
+  ]);
+
+  // Compare the email's host suffix against the site we're currently on.
+  // Returns: +20 (matches site host), 0 (public mailbox host on a site),
+  // -10 (mismatched corporate host -- e.g. consultant@otherco.com on
+  // acme.com, or competitor leakage), -25 (public mailbox host).
+  //
+  // Special case: if window.location.hostname IS a public-mailbox host
+  // (rare -- user is on mail.google.com directly), suppress the public-
+  // mailbox penalty since we have no signal to evaluate against.
+  function domainFitScore(email) {
+    if (!email || !email.includes("@")) return 0;
+    let pageHost;
+    try {
+      pageHost = (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
+    } catch (_) { return 0; }
+    if (!pageHost) return 0;
+
+    const emailHost = email.split("@")[1].toLowerCase();
+    if (!emailHost) return 0;
+
+    // Strip leading "support." / "help." / "contact." style subdomains
+    // from BOTH the page host and the email host so an email at
+    // contact@acme.com still matches when the user is on support.acme.com.
+    const stripPrefix = (h) => h.replace(/^(?:support|help|contact|info|service|customer|care|press|media)\./, "");
+    const ph = stripPrefix(pageHost);
+    const eh = stripPrefix(emailHost);
+
+    // Exact match or one is a suffix of the other (handles co.uk + www
+    // edge cases naturally).
+    if (ph === eh || ph.endsWith("." + eh) || eh.endsWith("." + ph)) return 20;
+
+    // Email at a public mailbox host on a non-mailbox-host page is bleed.
+    if (PUBLIC_MAILBOX_HOSTS.has(emailHost) && !PUBLIC_MAILBOX_HOSTS.has(pageHost)) {
+      return -25;
+    }
+
+    // Corporate mismatch -- email at one company's domain on another
+    // company's site. Could be legitimate (partner contact, consultant)
+    // but usually noise.
+    return -10;
+  }
+
   function scoreEmail(email, context) {
     let score = 50;
     const combined = (email + " " + context).toLowerCase();
@@ -1935,6 +1993,9 @@
 
     // Boost if found in footer or contact section
     if (context.toLowerCase().includes("footer")) score += 10;
+
+    // Domain-fit: does the email's host match the page we're on?
+    score += domainFitScore(email);
 
     return Math.max(0, Math.min(100, score));
   }
