@@ -194,6 +194,133 @@ function timeAgo(ts) {
   return Math.floor(s / (86400 * 7)) + "w ago";
 }
 
+// ---- Export (CSV + vCard) -----------------------------------------------
+// Turn found/saved contacts into downloadable files. Entirely local: a Blob
+// + anchor click, so no `downloads` permission is needed. CSV is for
+// spreadsheets/CRMs; vCard (.vcf) imports straight into phone/Google/Outlook
+// contacts. Both group nothing the user didn't already see on the page.
+
+function todayStamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function safeName(s) {
+  return String(s || "page").replace(/[^a-z0-9.-]+/gi, "_").replace(/^_+|_+$/g, "").slice(0, 50) || "page";
+}
+
+function confidenceLabel(score) {
+  const n = Number(score) || 0;
+  return n >= 70 ? "Likely support" : n >= 40 ? "Possible" : "Low match";
+}
+
+// Build a flat contact list from a content-script scan response.
+function normalizeScanContacts(data, hostname) {
+  const out = [];
+  const stamp = todayStamp();
+  (data.emails || []).forEach((e) => out.push({ type: "email", value: e.value, score: e.score, hostname, date: stamp }));
+  (data.phones || []).forEach((p) => out.push({ type: "phone", value: p.value, score: p.score, hostname, date: stamp }));
+  return out;
+}
+
+// Build the same flat list from saved history entries.
+function historyToContacts(hist) {
+  return (hist || [])
+    .filter((e) => e && (e.type === "email" || e.type === "phone"))
+    .map((e) => ({
+      type: e.type,
+      value: e.value,
+      score: e.score,
+      hostname: e.hostname || "",
+      date: e.timestamp ? new Date(e.timestamp).toISOString().slice(0, 10) : "",
+    }));
+}
+
+// --- CSV ---
+function csvCell(v) {
+  const s = v == null ? "" : String(v);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function contactsToCsv(contacts) {
+  const header = ["Type", "Value", "Score", "Confidence", "Source", "Found"];
+  const rows = [header.map(csvCell).join(",")];
+  contacts.forEach((c) => {
+    rows.push([
+      c.type,
+      c.value,
+      c.score != null ? c.score : "",
+      confidenceLabel(c.score),
+      c.hostname || "",
+      c.date || "",
+    ].map(csvCell).join(","));
+  });
+  // BOM so Excel renders accented characters; CRLF for spreadsheet friendliness.
+  return "﻿" + rows.join("\r\n") + "\r\n";
+}
+
+// --- vCard 3.0 (grouped by domain so each company is one importable card) ---
+function vEsc(s) {
+  return (s == null ? "" : String(s))
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+function contactsToVCard(contacts) {
+  const byOrg = new Map();
+  contacts.forEach((c) => {
+    const org = c.hostname || "Unknown";
+    if (!byOrg.has(org)) byOrg.set(org, { emails: [], phones: [] });
+    const g = byOrg.get(org);
+    if (c.type === "email" && c.value) g.emails.push(c.value);
+    else if (c.type === "phone" && c.value) g.phones.push(toE164(c.value));
+  });
+  const cards = [];
+  byOrg.forEach((g, org) => {
+    const lines = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "FN:" + vEsc(org + " (support)"),
+      "ORG:" + vEsc(org),
+    ];
+    Array.from(new Set(g.emails)).forEach((e) => lines.push("EMAIL;TYPE=INTERNET:" + vEsc(e)));
+    Array.from(new Set(g.phones)).forEach((p) => lines.push("TEL;TYPE=VOICE:" + vEsc(p)));
+    lines.push("NOTE:" + vEsc("Found via Find Me People — " + org));
+    lines.push("END:VCARD");
+    cards.push(lines.join("\r\n"));
+  });
+  return cards.join("\r\n") + "\r\n";
+}
+
+// Trigger a client-side download. Blob + anchor click works in MV3 popups and
+// needs no extra permission (unlike chrome.downloads).
+function downloadFile(filename, mimeType, text) {
+  const blob = new Blob([text], { type: mimeType + ";charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // Revoke after a beat so the download isn't cancelled mid-flight.
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+// Lightweight toast reusing the existing #copied element (defaults back to the
+// "Copied to clipboard" label so copy actions are unaffected).
+function showToast(msg) {
+  const el = document.getElementById("copied");
+  if (!el) return;
+  el.textContent = msg || "Copied to clipboard";
+  el.classList.add("show");
+  setTimeout(() => {
+    el.classList.remove("show");
+    el.textContent = "Copied to clipboard";
+  }, 1600);
+}
+
 function openUrl(url) {
   // HTTPS URLs go through chrome.tabs.create -- the official extension API
   // bypasses popup-blocker suppression that silently kills programmatic
@@ -333,7 +460,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
       html += "</div>";
       if (hist.length > 0) {
-        html += `<div class="history-footer"><button class="history-clear" id="history-clear">Clear history</button></div>`;
+        html += `<div class="history-footer">
+          <button class="history-export" data-export-history="csv">Export CSV</button>
+          <button class="history-export" data-export-history="vcard">Export vCard</button>
+          <button class="history-clear" id="history-clear">Clear history</button>
+        </div>`;
       }
       contentEl.innerHTML = html;
       // Wire search box (re-render on input, preserving focus across re-renders)
@@ -356,6 +487,21 @@ document.addEventListener("DOMContentLoaded", async () => {
           if (type === "email" || type === "phone") addToHistory({ value, type, hostname: host, score });
         });
       });
+      // Export the full saved history as CSV / vCard.
+      contentEl.querySelectorAll("[data-export-history]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const contacts = historyToContacts(hist);
+          if (contacts.length === 0) { showToast("Nothing to export"); return; }
+          const base = `fmp-history-${todayStamp()}`;
+          if (btn.dataset.exportHistory === "csv") {
+            downloadFile(`${base}.csv`, "text/csv", contactsToCsv(contacts));
+          } else {
+            downloadFile(`${base}.vcf`, "text/vcard", contactsToVCard(contacts));
+          }
+          showToast(`Exported ${contacts.length} contact${contacts.length > 1 ? "s" : ""}`);
+        });
+      });
+
       const clearBtn = document.getElementById("history-clear");
       if (clearBtn) {
         clearBtn.addEventListener("click", () => {
@@ -520,6 +666,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     html += "</div>";
 
+    // Export bar -- only when there's something to export (emails/phones).
+    if (total > 0) {
+      html += `
+        <div class="export-bar">
+          <span class="export-label">Export ${total}</span>
+          <button class="export-btn" data-export="csv" title="Download as CSV (spreadsheet)">&#8595; CSV</button>
+          <button class="export-btn" data-export="vcard" title="Download as vCard (.vcf) for your contacts app">&#8595; vCard</button>
+        </div>`;
+    }
+
     // Rescan button
     html += '<button class="rescan-btn" id="rescan-btn">Rescan this site</button>';
 
@@ -599,6 +755,23 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     });
 
+    // Export the current page's contacts as CSV / vCard.
+    let pageHost = "page";
+    try { pageHost = new URL(tab.url).hostname.replace(/^www\./, ""); } catch (_) {}
+    contentEl.querySelectorAll("[data-export]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const contacts = normalizeScanContacts(window._lastScanResults || data, pageHost);
+        if (contacts.length === 0) { showToast("Nothing to export"); return; }
+        const base = `fmp-contacts-${safeName(pageHost)}-${todayStamp()}`;
+        if (btn.dataset.export === "csv") {
+          downloadFile(`${base}.csv`, "text/csv", contactsToCsv(contacts));
+        } else {
+          downloadFile(`${base}.vcf`, "text/vcard", contactsToVCard(contacts));
+        }
+        showToast(`Exported ${contacts.length} contact${contacts.length > 1 ? "s" : ""}`);
+      });
+    });
+
     document.getElementById("rescan-btn").addEventListener("click", () => {
       contentEl.innerHTML = '<div class="scanning"><div class="spinner"></div><p>Rescanning...</p></div>';
       chrome.scripting.executeScript(
@@ -626,9 +799,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 function copyToClipboard(text) {
   navigator.clipboard.writeText(text);
   incrementCopyCount();
-  const el = document.getElementById("copied");
-  el.classList.add("show");
-  setTimeout(() => el.classList.remove("show"), 1500);
+  showToast("Copied to clipboard");
 }
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

@@ -50,13 +50,20 @@
     }
     .history-empty { padding: 40px 16px; text-align: center; color: #52525b; font-size: 13px; }
     .history-footer {
-      padding: 8px 16px 12px; text-align: center; border-top: 1px solid #1e1e1e;
+      padding: 8px 16px 12px; border-top: 1px solid #1e1e1e;
+      display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;
     }
     .history-clear {
       background: none; border: none; color: #71717a;
       font-size: 11px; cursor: pointer; font-family: inherit;
     }
     .history-clear:hover { color: #f87171; }
+    .history-export {
+      background: none; border: 1px solid #27272a; color: #a1a1aa;
+      font-size: 11px; padding: 3px 9px; border-radius: 6px;
+      cursor: pointer; font-family: inherit; transition: all 0.15s;
+    }
+    .history-export:hover { border-color: #a78bfa; color: #a78bfa; }
 
     .status { padding: 10px 16px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
     .status .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -143,6 +150,22 @@
       font-family: inherit; transition: border-color 0.2s; text-align: center;
     }
     .rescan-btn:hover { border-color: #a78bfa; }
+
+    /* Export bar (CSV / vCard) -- sits above the rescan button */
+    .export-bar {
+      display: flex; align-items: center; gap: 6px;
+      padding: 10px 16px 0;
+    }
+    .export-label {
+      font-size: 10px; color: #52525b; text-transform: uppercase;
+      letter-spacing: 0.5px; margin-right: auto;
+    }
+    .export-btn {
+      background: #18181b; border: 1px solid #27272a; color: #d4d4d8;
+      font-size: 11px; font-weight: 600; padding: 5px 11px; border-radius: 12px;
+      cursor: pointer; font-family: inherit; transition: all 0.15s; white-space: nowrap;
+    }
+    .export-btn:hover { border-color: #a78bfa; color: #a78bfa; }
 
     /* Hours section */
     .hours-banner {
