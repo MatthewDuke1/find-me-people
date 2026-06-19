@@ -398,6 +398,8 @@
 
     // 4d. Scan curated page-level metadata for contacts.
     scanPageMeta(results, seen);
+    scanNoscriptContent(results, seen);
+    scanFormValues(results, seen);
 
     // 4e. Press-release / media-contact extraction.
     scanPressContacts(results, seen);
@@ -1130,6 +1132,98 @@
         else if (/^tel:/i.test(href)) pushPhone(href);
       });
     } catch (_) {}
+
+    // Description-style meta fields. og:description / twitter:description
+    // and the legacy description meta tag are marketing-copy free-text but
+    // routinely contain contact info ("Call 1-800-FLOWERS or email
+    // support@..."). Scoring is muted relative to the explicit-email-key
+    // path above because these are prose, not declared contacts.
+    try {
+      const DESC_KEYS = new Set([
+        "og:description", "twitter:description", "description",
+        "og:title", "twitter:title",
+      ]);
+      document.querySelectorAll("meta[name], meta[property]").forEach((el) => {
+        const key = (el.getAttribute("property") || el.getAttribute("name") || "").toLowerCase();
+        if (!DESC_KEYS.has(key)) return;
+        const content = el.getAttribute("content") || "";
+        if (!content) return;
+        const decoded = decodeObfuscatedText(content);
+        const emailMatches = decoded.match(EMAIL_REGEX) || [];
+        emailMatches.forEach((email) => {
+          email = trimDigitPrefixBleed(email.toLowerCase());
+          if (seen.has(email)) return;
+          seen.add(email);
+          const ctx = "page meta: " + key;
+          // Use baseline scoreEmail without the +15 explicit-key bonus
+          // -- these are derived from prose, not declared contacts.
+          results.emails.push({
+            value: email,
+            context: ctx,
+            score: scoreEmail(email, ctx),
+            source: "meta",
+          });
+        });
+      });
+    } catch (_) {}
+  }
+
+  // Walk every <noscript> tag and scan its text body. <noscript> is the
+  // accessibility / SEO fallback for JS-disabled clients and many sites
+  // duplicate their actual contact info there so it indexes cleanly. We
+  // get the rendered (script-disabled) text, decode obfuscation, and
+  // apply the same regex passes.
+  function scanNoscriptContent(results, seen) {
+    document.querySelectorAll("noscript").forEach((el) => {
+      // textContent reads the literal HTML inside <noscript> as a string
+      // -- which is exactly what we want. (In a script-enabled browser
+      // the inner HTML is treated as text, not parsed.)
+      const text = el.textContent || "";
+      if (!text || text.length < 4) return;
+      const decoded = decodeObfuscatedText(text);
+      const emailMatches = decoded.match(EMAIL_REGEX) || [];
+      emailMatches.forEach((email) => {
+        email = trimDigitPrefixBleed(email.toLowerCase());
+        if (seen.has(email)) return;
+        seen.add(email);
+        const ctx = "noscript fallback";
+        results.emails.push({
+          value: email,
+          context: ctx,
+          score: scoreEmail(email, ctx),
+          source: "noscript",
+        });
+      });
+    });
+  }
+
+  // Scan form input value / defaultValue attributes for contact info.
+  // Hidden form fields routinely carry real configured values (support
+  // email pre-filled in a contact form, default reply-to address, etc.).
+  // We intentionally DO NOT scan placeholder -- those are example text
+  // (you@example.com) and produce nothing but noise.
+  function scanFormValues(results, seen) {
+    document.querySelectorAll("input[value], input[type='hidden']").forEach((el) => {
+      const val = (el.getAttribute("value") || el.value || "").trim();
+      if (!val || val.length < 4) return;
+      const decoded = decodeObfuscatedText(val);
+      const emailMatches = decoded.match(EMAIL_REGEX) || [];
+      emailMatches.forEach((email) => {
+        email = trimDigitPrefixBleed(email.toLowerCase());
+        if (seen.has(email)) return;
+        // Filter the obvious form-noise: example.com placeholder leaked
+        // into a value, our own scanPageGlobals-style noreply, etc.
+        if (email.includes("example.com") || email.includes("noreply") || email.includes("no-reply")) return;
+        seen.add(email);
+        const ctx = "form field";
+        results.emails.push({
+          value: email,
+          context: ctx,
+          score: scoreEmail(email, ctx),
+          source: "form-value",
+        });
+      });
+    });
   }
 
   // Detect press-release / media-contact blocks and extract contacts
@@ -3753,6 +3847,8 @@
     if (src === "json-ld") return "schema.org";
     if (src === "sms") return "sms link";
     if (src === "address") return "address tag";
+    if (src === "noscript") return "noscript";
+    if (src === "form-value") return "form field";
     return src || "page";
   }
 
@@ -3788,6 +3884,8 @@
     if (src === "json-ld") return "Schema.org JSON-LD structured data. The site author declared this as a spec-defined contact point in machine-readable form -- the highest-confidence signal short of a direct mailto: / tel: link.";
     if (src === "sms") return "Direct sms: link in the page HTML. Same trust as a tel: link -- explicitly authored as a contact channel.";
     if (src === "address") return "Found inside an HTML <address> tag, the spec-defined container for contact info. The author specifically marked this block as canonical contact info -- a strong signal.";
+    if (src === "noscript") return "Found inside a <noscript> fallback block. Sites commonly duplicate their canonical contact info there so JS-disabled clients (and SEO crawlers) can read it -- high signal-to-noise.";
+    if (src === "form-value") return "Found in the value attribute of a form input (often a hidden field carrying the configured reply-to or contact address). Higher trust than free-text scans because the value was explicitly set in the HTML, not inferred from prose.";
     return "Surfaced during the page scan; specific provenance not recorded.";
   }
 
