@@ -321,6 +321,48 @@ function showToast(msg) {
   }, 1600);
 }
 
+// Build and trigger a .vcf download for a SINGLE email or phone contact -- the
+// per-row "Save .vcf" button. Complements the bulk CSV/vCard export above
+// (that saves everything at once; this saves one contact). vCard 3.0 imports
+// into every native Contacts app and major mail client; CRLF-joined per RFC 6350.
+function buildEmailVCard(email, org) {
+  const fn = org ? `${org} Support` : email;
+  return [
+    "BEGIN:VCARD",
+    "VERSION:3.0",
+    `FN:${fn}`,
+    org ? `ORG:${org}` : null,
+    `EMAIL;TYPE=WORK:${email}`,
+    "END:VCARD",
+  ].filter(Boolean).join("\r\n") + "\r\n";
+}
+function buildPhoneVCard(displayPhone, e164, org) {
+  const fn = org ? `${org} Support` : displayPhone;
+  return [
+    "BEGIN:VCARD",
+    "VERSION:3.0",
+    `FN:${fn}`,
+    org ? `ORG:${org}` : null,
+    `TEL;TYPE=WORK,VOICE:${e164}`,
+    "END:VCARD",
+  ].filter(Boolean).join("\r\n") + "\r\n";
+}
+function vCardFilename(org, label) {
+  const safe = (org || "contact").replace(/[^\w.-]+/g, "_").toLowerCase();
+  return `${safe}-${label}.vcf`;
+}
+function downloadVCard(content, filename) {
+  const blob = new Blob([content], { type: "text/vcard;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
 function openUrl(url) {
   // HTTPS URLs go through chrome.tabs.create -- the official extension API
   // bypasses popup-blocker suppression that silently kills programmatic
@@ -603,7 +645,10 @@ document.addEventListener("DOMContentLoaded", async () => {
                 <span class="score ${scoreClass}">${scoreLabel}</span>
               </div>
             </div>
-            <button class="actions-toggle" data-toggle="${id}">Compose <span class="caret">&#9662;</span></button>
+            <div class="row-actions">
+              <button class="actions-toggle" data-toggle="${id}">Compose <span class="caret">&#9662;</span></button>
+              <button class="actions-toggle vcard-btn" data-save-vcard="email" data-value="${escVal}" title="Save as .vcf contact">&#11015; .vcf</button>
+            </div>
             <div class="actions-panel" data-panel="${id}">
               <div class="action-chips">${tplChips}</div>
             </div>
@@ -633,7 +678,10 @@ document.addEventListener("DOMContentLoaded", async () => {
                 <span class="score ${scoreClass}">${scoreLabel}</span>
               </div>
             </div>
-            <button class="actions-toggle" data-toggle="${id}">Call <span class="caret">&#9662;</span></button>
+            <div class="row-actions">
+              <button class="actions-toggle" data-toggle="${id}">Call <span class="caret">&#9662;</span></button>
+              <button class="actions-toggle vcard-btn" data-save-vcard="phone" data-value="${escVal}" data-e164="${escE164}" title="Save as .vcf contact">&#11015; .vcf</button>
+            </div>
             <div class="actions-panel" data-panel="${id}">
               <div class="action-chips">${voipChips}</div>
             </div>
@@ -741,6 +789,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         const svc = VOIP_SERVICES.find((s) => s.id === btn.dataset.voip);
         const phone = btn.dataset.phone;
         if (svc && phone) openUrl(svc.buildUrl(phone));
+      });
+    });
+
+    // Save .vcf chip -> build a vCard 3.0 blob and trigger download
+    contentEl.querySelectorAll("[data-save-vcard]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const kind = btn.dataset.saveVcard;
+        const value = btn.dataset.value;
+        let host = "";
+        try { host = new URL(tab.url).hostname.replace(/^www\./, ""); } catch (_) {}
+        if (kind === "email") {
+          downloadVCard(buildEmailVCard(value, host), vCardFilename(host, value.split("@")[0] || "email"));
+        } else if (kind === "phone") {
+          downloadVCard(buildPhoneVCard(value, btn.dataset.e164 || toE164(value), host), vCardFilename(host, "phone"));
+        }
       });
     });
 
