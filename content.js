@@ -246,6 +246,81 @@
     // (ld+json is handled by 1c above and skipped here -- no double-count.)
     scanInlineScriptBodies(results, seen);
 
+    // 1e. sms: URI scheme. Same parsing as tel:, slightly lower default
+    // score because SMS-first contact channels are usually marketing
+    // CTAs ("Text SAVE10 to 12345"), not durable support lines. But
+    // when someone publishes an SMS number, it's still an actionable
+    // contact channel and we shouldn't miss it.
+    document.querySelectorAll('a[href^="sms:"]').forEach((el) => {
+      // sms: URIs are sometimes "sms:+18005551212" (RFC 5724) and
+      // sometimes "sms:+18005551212?body=..." with a prefilled message.
+      const phone = el.href.replace("sms:", "").split("?")[0].replace(/\s/g, "");
+      const key = phoneKey(phone);
+      if (!seen.has(key) && phone.length >= 10) {
+        seen.add(key);
+        const context = getContext(el);
+        results.phones.push({ value: formatPhone(phone), context, score: 85, source: "sms" });
+      }
+    });
+
+    // 1f. <address> semantic tag: HTML's spec-defined container for contact
+    // info ("address element represents contact information for its
+    // nearest <article> or <body> ancestor"). High signal-to-noise when
+    // present -- the author specifically marked this block as canonical
+    // contact info. Run our standard mailto/tel/text passes inside. Runs
+    // before the body free-text scan below so these +10-trust matches win
+    // the dedup slot over the same address found in ordinary page prose.
+    document.querySelectorAll("address").forEach((addr) => {
+      addr.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
+        const email = el.href.replace("mailto:", "").split("?")[0].toLowerCase();
+        if (!seen.has(email) && email.includes("@")) {
+          seen.add(email);
+          const context = "from <address> tag";
+          results.emails.push({
+            value: email,
+            context,
+            score: Math.min(100, scoreEmail(email, context) + 10),
+            source: "address",
+          });
+        }
+      });
+      addr.querySelectorAll('a[href^="tel:"], a[href^="sms:"]').forEach((el) => {
+        const proto = el.href.startsWith("tel:") ? "tel:" : "sms:";
+        const phone = el.href.replace(proto, "").split("?")[0].replace(/\s/g, "");
+        const key = phoneKey(phone);
+        if (!seen.has(key) && phone.length >= 10) {
+          seen.add(key);
+          const context = "from <address> tag";
+          results.phones.push({
+            value: formatPhone(phone),
+            context,
+            score: 92,
+            source: "address",
+          });
+        }
+      });
+      // Free text inside the <address> tag, decoded for obfuscation.
+      // Plain-text email patterns ("Email: support@acme.com") commonly
+      // appear inside <address> blocks without a mailto link wrapper.
+      const text = addr.textContent || "";
+      if (text.length >= 4) {
+        const decoded = decodeObfuscatedText(text);
+        const emailMatches = decoded.match(EMAIL_REGEX) || [];
+        emailMatches.forEach((email) => {
+          email = trimDigitPrefixBleed(email.toLowerCase());
+          if (seen.has(email)) return;
+          seen.add(email);
+          const context = "from <address> tag";
+          results.emails.push({
+            value: email,
+            context,
+            score: Math.min(100, scoreEmail(email, context) + 10),
+            source: "address",
+          });
+        });
+      }
+    });
+
     // 2. Scan contact-likely sections
     //
     // innerText (not textContent) so block-level boundaries -- paragraphs,
@@ -3676,6 +3751,8 @@
     if (src === "text") return "page text";
     if (src === "inline-script") return "inline script";
     if (src === "json-ld") return "schema.org";
+    if (src === "sms") return "sms link";
+    if (src === "address") return "address tag";
     return src || "page";
   }
 
@@ -3709,6 +3786,8 @@
     if (src === "text") return "Free-text scan of the page body. Lower trust than direct mailto: / tel: links because context matters.";
     if (src === "inline-script") return "Found in the text body of an inline <script> tag (page hydration state, config object, or string literal). Often the most reliable source on JS-heavy SPAs where the DOM is empty until JS runs.";
     if (src === "json-ld") return "Schema.org JSON-LD structured data. The site author declared this as a spec-defined contact point in machine-readable form -- the highest-confidence signal short of a direct mailto: / tel: link.";
+    if (src === "sms") return "Direct sms: link in the page HTML. Same trust as a tel: link -- explicitly authored as a contact channel.";
+    if (src === "address") return "Found inside an HTML <address> tag, the spec-defined container for contact info. The author specifically marked this block as canonical contact info -- a strong signal.";
     return "Surfaced during the page scan; specific provenance not recorded.";
   }
 
