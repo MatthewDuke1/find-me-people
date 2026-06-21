@@ -1,6 +1,6 @@
 {
   "name": "find-me-people",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "private": true,
   "type": "module",
   "description": "Browser extension that bypasses chatbots and surfaces real customer service contacts. This package.json exists only for the Node-based test runner; the extension itself has no npm dependencies and ships as static files.",
