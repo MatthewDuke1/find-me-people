@@ -17,6 +17,7 @@ $Files = @(
   "content.js",
   "popup.html",
   "popup.js",
+  "license.js",
   "PRIVACY_POLICY.md",
   "README.md"
 )
