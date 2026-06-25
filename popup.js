@@ -293,6 +293,28 @@ function contactsToVCard(contacts) {
   return cards.join("\r\n") + "\r\n";
 }
 
+// --- Copy all (free, 1-click) ---
+// A deduped, newline-separated list of contact values — the lightweight
+// counterpart to export. Pastes cleanly into a sheet column, an email, or
+// anywhere. Free by design: copying contacts is core product, not Pro.
+function contactsToText(contacts) {
+  const seen = new Set();
+  const lines = [];
+  (contacts || []).forEach((c) => {
+    const v = (c && c.value ? String(c.value) : "").trim();
+    if (v && !seen.has(v)) { seen.add(v); lines.push(v); }
+  });
+  return lines.join("\n");
+}
+function copyAllContacts(contacts) {
+  const text = contactsToText(contacts);
+  if (!text) { showToast("Nothing to copy"); return; }
+  const n = text.split("\n").length;
+  navigator.clipboard.writeText(text);
+  incrementCopyCount();
+  showToast(`Copied ${n} contact${n === 1 ? "" : "s"}`);
+}
+
 // Trigger a client-side download. Blob + anchor click works in MV3 popups and
 // needs no extra permission (unlike chrome.downloads).
 function downloadFile(filename, mimeType, text) {
@@ -555,6 +577,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       html += "</div>";
       if (hist.length > 0) {
         html += `<div class="history-footer">
+          <button class="history-export" data-copyall-history title="Copy all to clipboard">Copy all</button>
           <button class="history-export" data-export-history="csv">Export CSV</button>
           <button class="history-export" data-export-history="vcard">Export vCard</button>
           <button class="history-clear" id="history-clear">Clear history</button>
@@ -594,6 +617,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             downloadFile(`${base}.vcf`, "text/vcard", contactsToVCard(contacts));
           }
           showToast(`Exported ${contacts.length} contact${contacts.length > 1 ? "s" : ""}`);
+        });
+      });
+
+      // Copy all history (Pro)
+      contentEl.querySelectorAll("[data-copyall-history]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!(await gateExport())) return;
+          copyAllContacts(historyToContacts(hist));
         });
       });
 
@@ -771,7 +802,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (total > 0) {
       html += `
         <div class="export-bar">
-          <span class="export-label">Export ${total}</span>
+          <span class="export-label">${total} found</span>
+          <button class="export-btn" data-copyall title="Copy all contacts to clipboard">&#10697; Copy all</button>
           <button class="export-btn" data-export="csv" title="Download as CSV (spreadsheet)">&#8595; CSV</button>
           <button class="export-btn" data-export="vcard" title="Download as vCard (.vcf) for your contacts app">&#8595; vCard</button>
         </div>`;
@@ -887,6 +919,14 @@ document.addEventListener("DOMContentLoaded", async () => {
           downloadFile(`${base}.vcf`, "text/vcard", contactsToVCard(contacts));
         }
         showToast(`Exported ${contacts.length} contact${contacts.length > 1 ? "s" : ""}`);
+      });
+    });
+
+    // Copy all (Pro) — same gate as export; copies a deduped value list in 1 click.
+    contentEl.querySelectorAll("[data-copyall]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!(await gateExport())) return;
+        copyAllContacts(normalizeScanContacts(window._lastScanResults || data, pageHost));
       });
     });
 
