@@ -3382,10 +3382,72 @@
   }
   fmpScheduleCacheWrite();
 
-  // Listen for popup requests
+  // Keyboard-shortcut copy: a deduped value list to the clipboard, with a
+  // lightweight on-page toast (the side panel may not be open).
+  function fmpCopyAllContacts() {
+    const seen = new Set();
+    const lines = [];
+    [].concat(results.emails || [], results.phones || []).forEach((c) => {
+      const v = c && c.value ? String(c.value).trim() : "";
+      if (v && !seen.has(v)) { seen.add(v); lines.push(v); }
+    });
+    if (!lines.length) { fmpHotkeyToast("No contacts found on this page"); return; }
+    const text = lines.join("\n");
+    const n = lines.length;
+    const ok = () => fmpHotkeyToast(`Copied ${n} contact${n === 1 ? "" : "s"}`);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(ok, () => fmpCopyExec(text, ok));
+      } else {
+        fmpCopyExec(text, ok);
+      }
+    } catch (_) { fmpCopyExec(text, ok); }
+  }
+
+  // Fallback copy for when the async Clipboard API is blocked (no focus/gesture).
+  function fmpCopyExec(text, done) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0;";
+      (document.body || document.documentElement).appendChild(ta);
+      ta.focus(); ta.select();
+      document.execCommand("copy");
+      ta.remove();
+      if (done) done();
+    } catch (_) {}
+  }
+
+  // Self-contained toast for hotkey feedback (independent of the side panel).
+  function fmpHotkeyToast(message) {
+    let el = document.getElementById("fmp-hotkey-toast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "fmp-hotkey-toast";
+      el.style.cssText =
+        "position:fixed;z-index:2147483647;bottom:22px;left:50%;" +
+        "transform:translateX(-50%);background:#18181b;color:#fafafa;" +
+        "font:600 13px/1.4 -apple-system,system-ui,sans-serif;padding:10px 16px;" +
+        "border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.45);opacity:0;" +
+        "transition:opacity .18s;pointer-events:none;max-width:80vw;";
+      (document.body || document.documentElement).appendChild(el);
+    }
+    el.textContent = message;
+    el.style.opacity = "1";
+    clearTimeout(el._fmpT);
+    el._fmpT = setTimeout(() => { el.style.opacity = "0"; }, 1900);
+  }
+
+  // Listen for popup requests + keyboard-shortcut commands (routed via background).
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.action === "getContacts") {
       sendResponse(results);
+    } else if (msg.action === "copyAllContacts") {
+      fmpCopyAllContacts();
+      sendResponse({ ok: true });
+    } else if (msg.action === "proUpsell") {
+      fmpHotkeyToast("Copy all is a Pro feature — open Find Me People to upgrade");
+      sendResponse({ ok: true });
     }
     return true;
   });

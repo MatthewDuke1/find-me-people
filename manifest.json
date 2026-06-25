@@ -29,9 +29,15 @@
       "run_at": "document_idle"
     }
   ],
+  "commands": {
+    "copy-all-contacts": {
+      "suggested_key": { "default": "Alt+Shift+C" },
+      "description": "Find Me People: copy all contacts on the page"
+    }
+  },
   "background": {
     "service_worker": "background.js",
-    "scripts": ["background.js"]
+    "scripts": ["license.js", "background.js"]
   },
   "icons": {
     "16": "icons/icon16.png",
