@@ -321,6 +321,55 @@ function showToast(msg) {
   }, 1600);
 }
 
+// ---- Pro / LemonSqueezy gating ------------------------------------------
+// isPro / openUpgrade / activateLicense / deactivateLicense / PRO_ENFORCED are
+// globals from license.js (loaded before popup.js). With PRO_ENFORCED=false,
+// isPro() always resolves true, so these are no-ops until the store goes live.
+
+// Returns true if the user may export; otherwise nudges to upgrade.
+async function gateExport() {
+  try {
+    if (await isPro()) return true;
+  } catch (_) {
+    return true; // never block on a licensing error
+  }
+  showToast("Export is a Pro feature");
+  if (typeof openUpgrade === "function") openUpgrade();
+  return false;
+}
+
+// Render the upgrade/activate footer -- only when licensing is enforced, so
+// nothing shows during soft-launch.
+async function renderProFooter() {
+  const el = document.getElementById("pro-footer");
+  if (!el || typeof PRO_ENFORCED === "undefined" || !PRO_ENFORCED) return;
+  let pro = false;
+  try { pro = await isPro(); } catch (_) {}
+  if (pro) {
+    el.innerHTML =
+      '<div class="pro-row"><span class="pro-label"><span class="bolt">&#9889;</span> Find Me People <span class="pro-pill on">PRO</span></span>' +
+      '<button class="pro-manage" id="pro-deactivate">Deactivate</button></div>';
+    const d = document.getElementById("pro-deactivate");
+    if (d) d.addEventListener("click", async () => { await deactivateLicense(); renderProFooter(); });
+    return;
+  }
+  el.innerHTML =
+    '<div class="pro-row"><span class="pro-label"><span class="bolt">&#9889;</span> Unlock Pro &mdash; export &amp; more</span>' +
+    '<button class="pro-cta" id="pro-upgrade">Upgrade</button></div>' +
+    '<div class="pro-activate"><input id="pro-key" type="text" placeholder="Paste license key" autocomplete="off" />' +
+    '<button id="pro-activate-btn">Activate</button></div>' +
+    '<div class="pro-msg" id="pro-msg"></div>';
+  document.getElementById("pro-upgrade").addEventListener("click", () => openUpgrade());
+  document.getElementById("pro-activate-btn").addEventListener("click", async () => {
+    const msg = document.getElementById("pro-msg");
+    const key = document.getElementById("pro-key").value;
+    msg.textContent = "Activating…"; msg.className = "pro-msg";
+    const r = await activateLicense(key);
+    if (r.ok) { msg.textContent = "Activated — Pro unlocked."; msg.className = "pro-msg ok"; setTimeout(renderProFooter, 900); }
+    else { msg.textContent = r.error; msg.className = "pro-msg err"; }
+  });
+}
+
 // Build and trigger a .vcf download for a SINGLE email or phone contact -- the
 // per-row "Save .vcf" button. Complements the bulk CSV/vCard export above
 // (that saves everything at once; this saves one contact). vCard 3.0 imports
@@ -444,6 +493,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const rateLink = document.getElementById("rate-link");
   if (rateLink) rateLink.href = getReviewUrl();
 
+  // Pro upgrade/activate footer (no-op visually until license.js PRO_ENFORCED).
+  if (typeof renderProFooter === "function") renderProFooter();
+
   // Side panel master toggle -- persisted to chrome.storage.local so the
   // content scripts on every tab can read it. Default is ON.
   const SP_MASTER_KEY = "fmp_side_panel_enabled";
@@ -531,7 +583,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
       // Export the full saved history as CSV / vCard.
       contentEl.querySelectorAll("[data-export-history]").forEach((btn) => {
-        btn.addEventListener("click", () => {
+        btn.addEventListener("click", async () => {
+          if (!(await gateExport())) return;
           const contacts = historyToContacts(hist);
           if (contacts.length === 0) { showToast("Nothing to export"); return; }
           const base = `fmp-history-${todayStamp()}`;
@@ -823,7 +876,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     let pageHost = "page";
     try { pageHost = new URL(tab.url).hostname.replace(/^www\./, ""); } catch (_) {}
     contentEl.querySelectorAll("[data-export]").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
+        if (!(await gateExport())) return;
         const contacts = normalizeScanContacts(window._lastScanResults || data, pageHost);
         if (contacts.length === 0) { showToast("Nothing to export"); return; }
         const base = `fmp-contacts-${safeName(pageHost)}-${todayStamp()}`;

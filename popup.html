@@ -284,6 +284,39 @@
     }
     .rate-footer a:hover { color: #4ade80; }
     .rate-footer .star { color: #fbbf24; }
+
+    /* Pro / upgrade footer (LemonSqueezy) */
+    .pro-footer:empty { display: none; }
+    .pro-footer {
+      padding: 10px 16px; border-top: 1px solid #1e1e1e;
+      display: flex; flex-direction: column; gap: 8px; font-size: 12px;
+    }
+    .pro-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .pro-row .pro-label { color: #d4d4d8; display: inline-flex; align-items: center; gap: 6px; }
+    .pro-row .pro-label .bolt { color: #fbbf24; }
+    .pro-pill { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
+    .pro-pill.on { background: rgba(74,222,128,0.15); color: #4ade80; }
+    .pro-cta {
+      background: #4ade80; color: #0a0a0a; font-weight: 700; font-size: 12px;
+      padding: 6px 12px; border-radius: 8px; border: 0; cursor: pointer; font-family: inherit;
+    }
+    .pro-cta:hover { background: #86efac; }
+    .pro-activate { display: flex; gap: 6px; }
+    .pro-activate input {
+      flex: 1; background: #18181b; border: 1px solid #27272a; border-radius: 6px;
+      color: #fafafa; font-size: 12px; padding: 6px 9px; font-family: inherit; outline: none;
+    }
+    .pro-activate input:focus { border-color: #a78bfa; }
+    .pro-activate button {
+      background: #18181b; border: 1px solid #27272a; color: #d4d4d8;
+      font-size: 12px; padding: 6px 11px; border-radius: 6px; cursor: pointer; font-family: inherit;
+    }
+    .pro-activate button:hover { border-color: #a78bfa; color: #a78bfa; }
+    .pro-msg { font-size: 11px; }
+    .pro-msg.ok { color: #4ade80; }
+    .pro-msg.err { color: #f87171; }
+    .pro-manage { background: none; border: none; color: #71717a; font-size: 11px; cursor: pointer; font-family: inherit; padding: 0; }
+    .pro-manage:hover { color: #f87171; }
   </style>
 </head>
 <body>
@@ -309,12 +342,18 @@
     <button class="switch" id="side-panel-toggle" role="switch" aria-checked="true" aria-label="Toggle side panel on pages"></button>
   </div>
 
+  <!-- Pro / LemonSqueezy upgrade + activate. Populated by popup.js only when
+       licensing is enforced (license.js PRO_ENFORCED), so it's invisible
+       during soft-launch. -->
+  <div class="pro-footer" id="pro-footer"></div>
+
   <div class="rate-footer">
     <a id="rate-link" href="#" target="_blank" rel="noopener"><span class="star">&#9733;</span> Rate Find Me People</a>
   </div>
 
   <div class="copied" id="copied">Copied to clipboard</div>
 
+  <script src="license.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

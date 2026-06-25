@@ -16,6 +16,7 @@ FILES=(
   content.js
   popup.html
   popup.js
+  license.js
   icons
   PRIVACY_POLICY.md
   README.md
