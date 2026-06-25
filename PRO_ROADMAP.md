@@ -1,85 +1,114 @@
 # Find Me People — Pro features & paid-plan roadmap
 
-## Guiding principle
-**Free finds the contact. Pro keeps it, exports it, organizes it, and scales it.**
+## Guiding principle: every job in ≤3 clicks
+**Find Me People kills the most tedious part of outreach — hand-collecting
+contacts.** The whole product runs on a click budget:
 
-The free tier must stay genuinely useful — it's the acquisition engine (installs,
-reviews, word of mouth). Pro monetizes **volume, data-out, workflow, and
-enrichment** — the things the paying persona actually needs. We gate *additive
-power features*, never take away something free users already rely on.
+- **Finding contacts = 0 clicks.** Auto-scan on page load; the side panel just
+  shows them.
+- **Doing something with them = ≤3 clicks, ideally 1.** Copy, export, or push to
+  your CRM — *without ever selecting-and-copy-pasting.*
 
-## Who pays
-Individual power-users doing outreach **at volume**: recruiters, SDRs / sales,
-founders doing cold outreach, BD, journalists, real-estate agents. They care
-about (a) getting contacts **out** into a sheet/CRM, (b) **not re-doing** work,
-and (c) **speed**. That's the wedge.
+Free does the finding. **Pro is the ≤3-click "get it where it needs to go."**
+That's the time it saves, and that's what people pay for. Every Pro feature has
+to pass one test: **does it remove clicks / minutes from a job people do over and
+over?** If not, it doesn't ship.
+
+## The pitch is time, not data
+Recruiters, SDRs/sales, founders, BD, journalists, real-estate — anyone
+collecting contacts **at volume**.
+
+- Manual capture ≈ **20–40 sec per contact** (find → select → copy → switch tab →
+  paste → fix formatting).
+- FMP Pro ≈ **1–2 clicks for the entire page**.
+- A 30-contact page: ~**15 min by hand → ~3 seconds**. A recruiter doing 10
+  pages/day saves **~2+ hours/day**. At any hourly rate, **$3/mo is a rounding
+  error** — *that's* the sell.
 
 ## The fence — Free vs Pro
 | Capability | Free | Pro |
 |---|---|---|
-| On-page contact scan (all the deep detection) | ✅ | ✅ |
-| Side panel, click-to-copy, Compose/Call actions | ✅ | ✅ |
-| Save a **single** contact (.vcf) | ✅ | ✅ |
-| Contact **history** (view + basic search) | ✅ (unlimited — no takeaway) | ✅ |
-| **Bulk export** all found contacts / history (CSV + vCard) | — | ✅ |
-| **Push to Google Sheets / webhook / CRM** | — | ✅ |
-| **Bulk / multi-tab scan** (many pages at once) | — | ✅ |
-| **Lists, tags, notes + power search** | — | ✅ |
+| Auto-scan contacts (all the deep detection) — **0 clicks** | ✅ | ✅ |
+| Side panel, Compose/Call, copy **one** contact (1 click) | ✅ | ✅ |
+| Save a **single** .vcf | ✅ | ✅ |
+| Contact **history** (view + basic search, unlimited) | ✅ | ✅ |
+| **Whole page → CSV / vCard** in 2 clicks | — | ✅ |
+| **Whole page → Google Sheet / CRM / webhook** in 2 clicks | — | ✅ |
+| **Copy ALL** contacts to clipboard in 1 click | — | ✅ |
+| **Keyboard shortcut** to scan+send (0 clicks) | — | ✅ |
+| **Scan every open tab** at once | — | ✅ |
+| **Lists / tags / notes + power search** | — | ✅ |
 | **Email pattern guess + verification** | — | ✅ |
 | **Custom export templates / CRM field mapping** | — | ✅ |
 
-> Note we deliberately do **not** cap free history count — removing value people
-> already have is the fastest way to earn 1-star reviews. The fence is *export &
-> scale*, not *artificial scarcity*.
+> We never cap free history or hide found contacts — removing value people
+> already have earns 1-star reviews. The fence is **speed at volume**, not scarcity.
 
-## Pro features (current + planned)
-| # | Feature | Why they pay | Builds on | Effort | Serverless? |
-|---|---------|--------------|-----------|--------|-------------|
-| **P1** | **Bulk export (CSV + vCard)** — all found contacts + full history | The #1 "get my data out" job | #66, #57 | ✅ shipped (gated) | ✅ |
-| **P2** | **Send to Google Sheets / Webhook (Zapier)** | One-click into their CRM/pipeline | OAuth (Sheets) or a webhook URL | M | ✅ (client OAuth / webhook) |
-| **P3** | **Bulk / multi-tab scan** — scan all open tabs or a pasted URL list, aggregate + dedupe | Volume prospecting in one pass | existing scan + background fetch (#23/#35) | M | ✅ |
-| **P4** | **Lists, tags, notes + power search** — organize the (free) history into named lists | CRM-lite; stops re-finding people | history (#56) | M | ✅ |
-| **P5** | **Email pattern guess + verification** — `first@domain` guess + deliverability check | The core sales-tool feature | a verification provider | L | ⚠️ needs a service (cost/privacy) |
-| **P6** | **Custom export templates / CRM field mapping** | Drop-in to HubSpot/Salesforce columns | export (#66) | S–M | ✅ |
-| **T1** | **Team: shared lists + seats** (future tier) | Expansion revenue from teams | a backend | L | ⚠️ needs backend |
+## The ≤3-click promise (click budget per Pro action)
+| Action | Clicks | Replaces (by hand) |
+|---|---|---|
+| Copy one contact | **1** — click the chip | select + Ctrl-C |
+| Whole page → CSV / vCard | **2** — open → Export | copy/paste every row |
+| **Whole page → Google Sheet / CRM** | **2** — open → Send | paste each contact one by one |
+| Copy ALL to clipboard | **1** — open → Copy all | N× select + copy |
+| Scan every open tab + export | **3** — open → Scan tabs → Export | visit + scan each tab |
+| Scan + send via keyboard shortcut | **0 clicks** (hotkey) | all of the above |
 
-✅ = stays in the no-backend, client-side model (cheap to run). ⚠️ = requires a
-service/infra decision before building (P5 verification, T1 team).
+*(With the side panel pinned, most of these drop a click — the panel's already open.)*
+
+## Pro features — ordered by clicks/time killed
+| # | Feature | The ≤3-click win | Effort | Serverless |
+|---|---------|------------------|--------|------------|
+| **P1** | **Bulk export CSV + vCard** (page + history) | 2 clicks vs paste-every-row | ✅ shipped (gated) | ✅ |
+| **P2** | **Send to Google Sheet / webhook / CRM** *(the hero)* | 2 clicks vs paste-one-by-one into your pipeline | M | ✅ (client OAuth / webhook) |
+| **P3** | **Copy ALL** to clipboard | 1 click vs N copies | S | ✅ |
+| **P4** | **Keyboard shortcut** — scan + export/send | **0 clicks** | S | ✅ |
+| **P5** | **Bulk / multi-tab scan** | 1 click = many pages | M | ✅ |
+| **P6** | **Lists / tags / notes + power search** | stop re-finding the same people | M | ✅ |
+| **P7** | **Email pattern guess + verification** | skip manual guess + bounce-checking | L | ⚠️ needs a service |
+| **P8** | **Custom export templates / CRM mapping** | drop-in, zero reformatting | S–M | ✅ |
+| **T1** | **Team: shared lists + seats** *(future)* | — | L | ⚠️ needs backend |
+
+✅ = stays in the no-backend, client-side model. ⚠️ = needs a service/infra
+decision first (P7 verification, T1 team).
 
 ## Paid plans
-- **Free** — the acquisition engine (everything in the Free column above).
-- **Pro** — **$3/mo · $24/yr · $49 lifetime**. One tier, three billing options
-  as LemonSqueezy variants (the extension just opens the checkout — see
-  `LEMONSQUEEZY.md`). Cheap-by-design: optimize for conversion volume, with the
-  $49 lifetime as an early-adopter cash-flow anchor.
-- **Team** *(future)* — ~$5–8/seat/mo for shared lists + seats. Only when there's
-  pull; it's the first thing that needs a backend.
+- **Free** — the acquisition engine (the Free column above): find in 0 clicks,
+  copy one in 1.
+- **Pro** — **$3/mo · $24/yr · $49 lifetime** (one tier, three LemonSqueezy
+  variants; the extension just opens the checkout — see `LEMONSQUEEZY.md`).
+  Cheap-by-design: optimize for conversion volume, with $49 lifetime as an
+  early-adopter cash anchor.
+- **Team** *(future)* — ~$5–8/seat/mo for shared lists + seats. First thing that
+  needs a backend; only when there's pull.
 
-## Rollout roadmap
-| Version | Theme | Ships | Goal |
+## Rollout roadmap (speed-first)
+| Version | Theme | Ships | The promise it delivers |
 |---|---|---|---|
-| **v1.7** (shipped) | Rails dormant | LemonSqueezy scaffold (#68), export gated, `PRO_ENFORCED=false` | Build the paywall without charging |
-| **v1.8** | **Launch Pro** | Flip `PRO_ENFORCED=true`; **P1 export** = Pro; LemonSqueezy store live | Prove people *pay* for one clear feature |
-| **v1.9** | **Thicken Pro** | **P3 bulk/multi-tab scan** + **P6 export templates** | Make $3/mo a no-brainer for power users |
-| **v2.0** | **Outreach toolkit** | **P2 Sheets/CRM push** + **P4 lists/tags/notes** | Pro becomes a *workflow*, not a feature → justifies annual/lifetime |
-| **v2.1+** | **Enrichment** | **P5 email pattern + verification** | The real sales-tool tier (after the service decision) |
-| **Later** | **Team** | **T1 shared lists + seats** | Expansion revenue; new price point |
+| **v1.7** (shipped) | Rails dormant | scaffold #68, export gated, `PRO_ENFORCED=false` | build the paywall without charging |
+| **v1.8** | **Never copy-paste again** | **P1** export live + **P3 Copy-all** + **P4 hotkey** | one-click/zero-click off the page |
+| **v1.9** | **One click to your stack** | **P2 Sheets/CRM push** + **P8 templates** | page → your pipeline in 2 clicks |
+| **v2.0** | **A whole session in one pass** | **P5 multi-tab scan** + **P6 lists/notes** | many pages, one click; stop re-finding |
+| **v2.1+** | **Enrichment** | **P7 pattern + verify** | after the service decision |
+| **Later** | **Team** | **T1 shared lists + seats** | expansion revenue, new price point |
 
-## Sequencing logic
-1. **Launch on the strongest single feature (export)** — don't dilute the first
-   paywall across many half-features. One obvious value, validate willingness to pay.
-2. **Thicken before you broaden** — v1.9 adds power to the *same* export buyer
-   (more scanning + better export) so early Pro users feel the price is fair.
-3. **Then turn it into a workflow** (v2.0) — Sheets push + lists is what converts
-   "nice tool" into "I run my outreach on this," which is where annual/lifetime sells.
-4. **Enrichment last** — P5/Team are the only items that break the serverless
-   model; don't take on infra + per-verification cost until the free→Pro funnel
-   is proven.
+## Why this order
+1. **Lead with the rawest time-save** — export + copy-all + hotkey are *tiny* to
+   build and instantly deliver "never copy-paste a contact again." Cheapest path
+   to a payable promise, and the cleanest demo of the speed angle.
+2. **Then one-click-to-CRM (P2)** — the highest-value click kill (destroys the
+   paste-into-CRM loop), worth the small OAuth/webhook lift.
+3. **Then volume (P5)** — multiplies the saving across an entire prospecting
+   session.
+4. **Enrichment last** — P7/Team are the only items that break the serverless
+   model; don't take on infra + per-verify cost until the free→Pro funnel is proven.
 
 ## Open decisions (need Matt)
-- **Feature-gate vs usage-meter:** v1 is feature-gated (export = Pro). Could later
-  add "N free exports/month then upgrade" if conversion needs a softer nudge.
-- **P5 verification provider** — build vs buy (e.g., a verification API) — has
-  cost + privacy implications; decide before v2.1.
-- **Annual vs lifetime emphasis** — lifetime is great for early cash but caps LTV;
-  consider sunsetting the $49 lifetime after the first ~few hundred sales.
+- **Free teaser vs Pro for Copy-all / hotkey:** a free "copy all (plain text)"
+  is a great speed *demo* that funnels to Pro's structured export + CRM push.
+  Leaning Pro-but-generous; could free-tier the plain-text copy.
+- **Feature-gate vs usage-meter:** v1 is feature-gated (export = Pro). Could add
+  "N free exports/month then upgrade" if conversion needs a softer nudge.
+- **P7 verification:** build vs buy (cost + privacy) — decide before v2.1.
+- **Lifetime sunset:** $49 lifetime is great for early cash but caps LTV;
+  consider retiring it after the first few hundred sales.
