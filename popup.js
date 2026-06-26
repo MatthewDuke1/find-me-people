@@ -321,6 +321,75 @@ function showToast(msg) {
   }, 1600);
 }
 
+// ---- Scan all open tabs (Pro) -------------------------------------------
+// The volume play: sweep every http(s) tab in the current window, scan each
+// for contacts, aggregate + dedupe (tagging each with its source hostname),
+// and hand back one flat contact list for a combined CSV export. Reuses the
+// content script (injected on demand) + the same `getContacts` message the
+// single-page scan uses. host_permissions <all_urls> covers both reading
+// tab.url and injecting, so no extra permission is needed.
+
+function hostnameOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch (_) { return ""; }
+}
+
+// Ask one tab for its contacts, injecting content.js first if it isn't loaded.
+// Resolves to a normalized contact list (possibly empty) — never rejects, so
+// one unscannable tab can't sink the whole sweep.
+function scanTabContacts(tab) {
+  const host = hostnameOf(tab.url);
+  const ask = () =>
+    new Promise((res) => {
+      let settled = false;
+      const done = (r) => { if (!settled) { settled = true; res(r); } };
+      try {
+        chrome.tabs.sendMessage(tab.id, { action: "getContacts" }, (response) => {
+          if (chrome.runtime.lastError || !response) return done(null);
+          done(response);
+        });
+      } catch (_) { done(null); }
+      // Guard against a tab that never answers (e.g. still loading).
+      setTimeout(() => done(null), 3000);
+    });
+
+  return new Promise((resolve) => {
+    ask().then((response) => {
+      if (response) return resolve(normalizeScanContacts(response, host));
+      // Not loaded — inject the content script, give it a beat, then retry once.
+      try {
+        chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] }, () => {
+          if (chrome.runtime.lastError) return resolve([]);
+          setTimeout(() => {
+            ask().then((r2) => resolve(r2 ? normalizeScanContacts(r2, host) : []));
+          }, 1500);
+        });
+      } catch (_) { resolve([]); }
+    });
+  });
+}
+
+// Dedupe a flat contact list. Same value on the same host is one contact;
+// the higher-scoring sighting wins. Keeps cross-host duplicates (the same
+// number listed on two companies is two legitimately distinct results).
+function dedupeContacts(contacts) {
+  const byKey = new Map();
+  contacts.forEach((c) => {
+    if (!c || !c.value) return;
+    const key = `${c.type}|${String(c.value).toLowerCase()}|${c.hostname || ""}`;
+    const prev = byKey.get(key);
+    if (!prev || (Number(c.score) || 0) > (Number(prev.score) || 0)) byKey.set(key, c);
+  });
+  return Array.from(byKey.values());
+}
+
+// Scan every http(s) tab in the current window and return one deduped list.
+async function scanAllTabsContacts() {
+  const tabs = await chrome.tabs.query({ currentWindow: true });
+  const scannable = (tabs || []).filter((t) => t && t.id != null && /^https?:\/\//i.test(t.url || ""));
+  const results = await Promise.all(scannable.map((t) => scanTabContacts(t)));
+  return dedupeContacts(results.flat());
+}
+
 // ---- Pro / LemonSqueezy gating ------------------------------------------
 // isPro / openUpgrade / activateLicense / deactivateLicense / PRO_ENFORCED are
 // globals from license.js (loaded before popup.js). With PRO_ENFORCED=false,
@@ -777,7 +846,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         </div>`;
     }
 
-    // Rescan button
+    // Scan-all-tabs (Pro) + Rescan buttons
+    html += '<button class="scan-tabs-btn" id="scan-tabs-btn" title="Scan every open tab in this window and export one combined CSV">&#9783; Scan all open tabs</button>';
     html += '<button class="rescan-btn" id="rescan-btn">Rescan this site</button>';
 
     contentEl.innerHTML = html;
@@ -889,6 +959,31 @@ document.addEventListener("DOMContentLoaded", async () => {
         showToast(`Exported ${contacts.length} contact${contacts.length > 1 ? "s" : ""}`);
       });
     });
+
+    // Scan all open tabs (Pro): sweep the whole window, aggregate + dedupe,
+    // export one combined CSV. Gated behind the same Pro check as export.
+    const scanTabsBtn = document.getElementById("scan-tabs-btn");
+    if (scanTabsBtn) {
+      scanTabsBtn.addEventListener("click", async () => {
+        if (!(await gateExport())) return;
+        scanTabsBtn.disabled = true;
+        const original = scanTabsBtn.textContent;
+        scanTabsBtn.textContent = "Scanning all tabs…";
+        try {
+          const contacts = await scanAllTabsContacts();
+          if (contacts.length === 0) { showToast("No contacts found across your tabs"); return; }
+          const base = `fmp-all-tabs-${todayStamp()}`;
+          downloadFile(`${base}.csv`, "text/csv", contactsToCsv(contacts));
+          const hosts = new Set(contacts.map((c) => c.hostname).filter(Boolean)).size;
+          showToast(`Exported ${contacts.length} contact${contacts.length > 1 ? "s" : ""} from ${hosts} site${hosts > 1 ? "s" : ""}`);
+        } catch (_) {
+          showToast("Couldn't scan all tabs");
+        } finally {
+          scanTabsBtn.disabled = false;
+          scanTabsBtn.textContent = original;
+        }
+      });
+    }
 
     document.getElementById("rescan-btn").addEventListener("click", () => {
       contentEl.innerHTML = '<div class="scanning"><div class="spinner"></div><p>Rescanning...</p></div>';
