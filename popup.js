@@ -215,6 +215,16 @@ function confidenceLabel(score) {
   return n >= 70 ? "Likely support" : n >= 40 ? "Possible" : "Low match";
 }
 
+// Scope a flat contact list to a chosen type ("email" / "phone" / anything
+// else = both). Powers the Pro "Include" selector in the export bar so users
+// can export emails-only or phones-only without post-filtering a spreadsheet.
+function filterContactsByType(contacts, type) {
+  if (type === "email" || type === "phone") {
+    return (contacts || []).filter((c) => c && c.type === type);
+  }
+  return contacts || [];
+}
+
 // Build a flat contact list from a content-script scan response.
 function normalizeScanContacts(data, hostname) {
   const out = [];
@@ -768,10 +778,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     html += "</div>";
 
     // Export bar -- only when there's something to export (emails/phones).
+    // A small type selector (Both / Emails / Phones) lets Pro scope the export
+    // before downloading; chips for a type with zero results are disabled.
     if (total > 0) {
+      const emailDisabled = emails.length === 0 ? " disabled" : "";
+      const phoneDisabled = phones.length === 0 ? " disabled" : "";
       html += `
+        <div class="export-select" id="export-select">
+          <span class="export-label">Include</span>
+          <button class="filter-chip selected" data-export-type="both">Both</button>
+          <button class="filter-chip" data-export-type="email"${emailDisabled}>Emails (${emails.length})</button>
+          <button class="filter-chip" data-export-type="phone"${phoneDisabled}>Phones (${phones.length})</button>
+        </div>
         <div class="export-bar">
-          <span class="export-label">Export ${total}</span>
+          <span class="export-label" id="export-count-label">Export ${total}</span>
           <button class="export-btn" data-export="csv" title="Download as CSV (spreadsheet)">&#8595; CSV</button>
           <button class="export-btn" data-export="vcard" title="Download as vCard (.vcf) for your contacts app">&#8595; vCard</button>
         </div>`;
@@ -872,15 +892,38 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     });
 
-    // Export the current page's contacts as CSV / vCard.
+    // Export the current page's contacts as CSV / vCard, scoped by the chosen
+    // type filter (Both / Emails / Phones).
     let pageHost = "page";
     try { pageHost = new URL(tab.url).hostname.replace(/^www\./, ""); } catch (_) {}
+
+    // Selected export type for this render -- "both" until the user picks one.
+    let exportType = "both";
+    const countLabel = document.getElementById("export-count-label");
+    contentEl.querySelectorAll("[data-export-type]").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        if (chip.disabled) return;
+        exportType = chip.dataset.exportType;
+        contentEl.querySelectorAll("[data-export-type]").forEach((c) =>
+          c.classList.toggle("selected", c === chip));
+        if (countLabel) {
+          const n = filterContactsByType(
+            normalizeScanContacts(window._lastScanResults || data, pageHost),
+            exportType
+          ).length;
+          countLabel.textContent = `Export ${n}`;
+        }
+      });
+    });
+
     contentEl.querySelectorAll("[data-export]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         if (!(await gateExport())) return;
-        const contacts = normalizeScanContacts(window._lastScanResults || data, pageHost);
+        const all = normalizeScanContacts(window._lastScanResults || data, pageHost);
+        const contacts = filterContactsByType(all, exportType);
         if (contacts.length === 0) { showToast("Nothing to export"); return; }
-        const base = `fmp-contacts-${safeName(pageHost)}-${todayStamp()}`;
+        const suffix = exportType === "email" ? "-emails" : exportType === "phone" ? "-phones" : "";
+        const base = `fmp-contacts-${safeName(pageHost)}${suffix}-${todayStamp()}`;
         if (btn.dataset.export === "csv") {
           downloadFile(`${base}.csv`, "text/csv", contactsToCsv(contacts));
         } else {

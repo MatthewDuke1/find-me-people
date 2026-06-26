@@ -169,6 +169,23 @@
     }
     .export-btn:hover { border-color: #a78bfa; color: #a78bfa; }
 
+    /* Export type selector (Both / Emails / Phones) -- sits above the export bar */
+    .export-select {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      padding: 10px 16px 0;
+    }
+    .export-select .export-label { margin-right: 2px; }
+    .filter-chip {
+      background: #18181b; border: 1px solid #27272a; color: #d4d4d8;
+      font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 12px;
+      cursor: pointer; font-family: inherit; transition: all 0.15s; white-space: nowrap;
+    }
+    .filter-chip:hover:not(:disabled) { border-color: #a78bfa; color: #a78bfa; }
+    .filter-chip.selected {
+      background: rgba(167,139,250,0.15); border-color: #a78bfa; color: #a78bfa;
+    }
+    .filter-chip:disabled { opacity: 0.4; cursor: default; }
+
     /* Hours section */
     .hours-banner {
       margin: 0 16px 8px; padding: 12px 14px;
