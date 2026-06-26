@@ -169,6 +169,30 @@
     }
     .export-btn:hover { border-color: #a78bfa; color: #a78bfa; }
 
+    /* Webhook / Send to CRM inline capture row */
+    .webhook-row {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 16px 0;
+    }
+    .webhook-row[hidden] { display: none; }
+    .webhook-input {
+      flex: 1; min-width: 0; background: #18181b; border: 1px solid #27272a;
+      border-radius: 6px; color: #fafafa; font-size: 11px; padding: 6px 9px;
+      font-family: inherit; outline: none;
+    }
+    .webhook-input:focus { border-color: #a78bfa; }
+    .webhook-save {
+      background: #18181b; border: 1px solid #27272a; color: #d4d4d8;
+      font-size: 11px; font-weight: 600; padding: 6px 10px; border-radius: 6px;
+      cursor: pointer; font-family: inherit; white-space: nowrap; transition: all 0.15s;
+    }
+    .webhook-save:hover { border-color: #a78bfa; color: #a78bfa; }
+    .webhook-cancel {
+      background: none; border: none; color: #71717a; font-size: 16px;
+      line-height: 1; cursor: pointer; font-family: inherit; padding: 2px 4px;
+    }
+    .webhook-cancel:hover { color: #f87171; }
+
     /* Hours section */
     .hours-banner {
       margin: 0 16px 8px; padding: 12px 14px;

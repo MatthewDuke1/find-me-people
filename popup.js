@@ -321,6 +321,77 @@ function showToast(msg) {
   }, 1600);
 }
 
+// ---- Send to Webhook / CRM (Pro) ----------------------------------------
+// POST the found contacts as JSON to a user-saved webhook URL so a single
+// click pushes a page's contacts straight into Zapier / Make / HubSpot (or
+// any endpoint that accepts a JSON body). The URL lives in
+// chrome.storage.local under WEBHOOK_KEY; first use with nothing saved opens
+// a small inline input row (window.prompt is blocked in MV3 popups).
+
+const WEBHOOK_KEY = "fmp_webhook"; // chrome.storage.local
+
+function getWebhookUrl() {
+  return new Promise((res) => {
+    if (!chrome.storage || !chrome.storage.local) return res("");
+    chrome.storage.local.get([WEBHOOK_KEY], (r) => res(typeof r[WEBHOOK_KEY] === "string" ? r[WEBHOOK_KEY] : ""));
+  });
+}
+function setWebhookUrl(url) {
+  return new Promise((res) => {
+    if (!chrome.storage || !chrome.storage.local) return res();
+    chrome.storage.local.set({ [WEBHOOK_KEY]: url }, res);
+  });
+}
+
+// Only accept http(s) endpoints — protects against pasting junk and keeps the
+// POST to something a CRM/automation tool can actually receive.
+function isValidWebhookUrl(url) {
+  try {
+    const u = new URL(String(url).trim());
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch (_) {
+    return false;
+  }
+}
+
+// Shape the payload Zapier/Make/HubSpot-style endpoints expect: a top-level
+// object with metadata + a contacts array (each tagged with its source host).
+function buildWebhookPayload(contacts, hostname) {
+  return {
+    source: "Find Me People",
+    hostname: hostname || "",
+    exportedAt: new Date().toISOString(),
+    count: contacts.length,
+    contacts: contacts.map((c) => ({
+      type: c.type,
+      value: c.value,
+      score: c.score != null ? c.score : null,
+      confidence: confidenceLabel(c.score),
+      hostname: c.hostname || hostname || "",
+      foundAt: c.date || "",
+    })),
+  };
+}
+
+// POST contacts to the saved webhook. Returns { ok } or { ok:false, error }.
+// Uses no-cors-incompatible JSON, but host_permissions <all_urls> means the
+// request is a normal CORS fetch — most automation webhooks return 200 with
+// permissive CORS; if one doesn't, the opaque/failed response surfaces as an
+// error toast rather than a silent success.
+async function sendToWebhook(url, contacts, hostname) {
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildWebhookPayload(contacts, hostname)),
+    });
+    if (r && (r.ok || (r.status >= 200 && r.status < 300))) return { ok: true };
+    return { ok: false, error: `Webhook returned ${r ? r.status : "no response"}` };
+  } catch (_) {
+    return { ok: false, error: "Couldn't reach that webhook URL" };
+  }
+}
+
 // ---- Pro / LemonSqueezy gating ------------------------------------------
 // isPro / openUpgrade / activateLicense / deactivateLicense / PRO_ENFORCED are
 // globals from license.js (loaded before popup.js). With PRO_ENFORCED=false,
@@ -774,6 +845,13 @@ document.addEventListener("DOMContentLoaded", async () => {
           <span class="export-label">Export ${total}</span>
           <button class="export-btn" data-export="csv" title="Download as CSV (spreadsheet)">&#8595; CSV</button>
           <button class="export-btn" data-export="vcard" title="Download as vCard (.vcf) for your contacts app">&#8595; vCard</button>
+          <button class="export-btn" data-send-webhook title="Send these contacts to your CRM / Zapier / Make webhook">&#8599; Send to CRM</button>
+        </div>
+        <div class="webhook-row" id="webhook-row" hidden>
+          <input class="webhook-input" id="webhook-input" type="url" inputmode="url" autocomplete="off"
+                 placeholder="Paste your CRM / Zapier / Make webhook URL" />
+          <button class="webhook-save" id="webhook-save">Save &amp; Send</button>
+          <button class="webhook-cancel" id="webhook-cancel" title="Cancel">&times;</button>
         </div>`;
     }
 
@@ -889,6 +967,52 @@ document.addEventListener("DOMContentLoaded", async () => {
         showToast(`Exported ${contacts.length} contact${contacts.length > 1 ? "s" : ""}`);
       });
     });
+
+    // Send to CRM / webhook -- one click pushes this page's contacts as JSON to
+    // a saved endpoint. First use (no URL saved) reveals an inline input row.
+    const webhookBtn = contentEl.querySelector("[data-send-webhook]");
+    if (webhookBtn) {
+      const row = document.getElementById("webhook-row");
+      const input = document.getElementById("webhook-input");
+      const saveBtn = document.getElementById("webhook-save");
+      const cancelBtn = document.getElementById("webhook-cancel");
+
+      const collectContacts = () => normalizeScanContacts(window._lastScanResults || data, pageHost);
+
+      const doSend = async (url) => {
+        const contacts = collectContacts();
+        if (contacts.length === 0) { showToast("Nothing to send"); return; }
+        showToast("Sending to CRM…");
+        const r = await sendToWebhook(url, contacts, pageHost);
+        if (r.ok) showToast(`Sent ${contacts.length} contact${contacts.length > 1 ? "s" : ""} to CRM`);
+        else showToast(r.error || "Send failed");
+      };
+
+      webhookBtn.addEventListener("click", async () => {
+        if (!(await gateExport())) return;
+        if (collectContacts().length === 0) { showToast("Nothing to send"); return; }
+        const saved = await getWebhookUrl();
+        if (isValidWebhookUrl(saved)) {
+          doSend(saved);
+        } else {
+          // No URL yet -- reveal the inline capture row (prompt() is blocked in MV3).
+          if (row) { row.hidden = false; if (input) { input.value = saved || ""; input.focus(); } }
+        }
+      });
+
+      if (saveBtn) {
+        const saveAndSend = async () => {
+          const url = (input && input.value || "").trim();
+          if (!isValidWebhookUrl(url)) { showToast("Enter a valid http(s) URL"); return; }
+          await setWebhookUrl(url);
+          if (row) row.hidden = true;
+          doSend(url);
+        };
+        saveBtn.addEventListener("click", saveAndSend);
+        if (input) input.addEventListener("keydown", (e) => { if (e.key === "Enter") saveAndSend(); });
+      }
+      if (cancelBtn) cancelBtn.addEventListener("click", () => { if (row) row.hidden = true; });
+    }
 
     document.getElementById("rescan-btn").addEventListener("click", () => {
       contentEl.innerHTML = '<div class="scanning"><div class="spinner"></div><p>Rescanning...</p></div>';
