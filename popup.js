@@ -293,6 +293,22 @@ function contactsToVCard(contacts) {
   return cards.join("\r\n") + "\r\n";
 }
 
+// --- JSON (for devs / automation) ---
+// A clean array of contact objects -- the same flat fields the CSV carries,
+// but machine-readable so it drops straight into a script, Postman, or an
+// automation tool without parsing CSV. Pretty-printed for readability.
+function contactsToJson(contacts) {
+  const arr = (contacts || []).map((c) => ({
+    type: c.type,
+    value: c.value,
+    score: c.score != null ? c.score : null,
+    confidence: confidenceLabel(c.score),
+    source: c.hostname || "",
+    found: c.date || "",
+  }));
+  return JSON.stringify(arr, null, 2) + "\n";
+}
+
 // Trigger a client-side download. Blob + anchor click works in MV3 popups and
 // needs no extra permission (unlike chrome.downloads).
 function downloadFile(filename, mimeType, text) {
@@ -557,6 +573,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         html += `<div class="history-footer">
           <button class="history-export" data-export-history="csv">Export CSV</button>
           <button class="history-export" data-export-history="vcard">Export vCard</button>
+          <button class="history-export" data-export-history="json">Export JSON</button>
           <button class="history-clear" id="history-clear">Clear history</button>
         </div>`;
       }
@@ -590,6 +607,8 @@ document.addEventListener("DOMContentLoaded", async () => {
           const base = `fmp-history-${todayStamp()}`;
           if (btn.dataset.exportHistory === "csv") {
             downloadFile(`${base}.csv`, "text/csv", contactsToCsv(contacts));
+          } else if (btn.dataset.exportHistory === "json") {
+            downloadFile(`${base}.json`, "application/json", contactsToJson(contacts));
           } else {
             downloadFile(`${base}.vcf`, "text/vcard", contactsToVCard(contacts));
           }
@@ -774,6 +793,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           <span class="export-label">Export ${total}</span>
           <button class="export-btn" data-export="csv" title="Download as CSV (spreadsheet)">&#8595; CSV</button>
           <button class="export-btn" data-export="vcard" title="Download as vCard (.vcf) for your contacts app">&#8595; vCard</button>
+          <button class="export-btn" data-export="json" title="Download as JSON (for devs / automation)">&#8595; JSON</button>
         </div>`;
     }
 
@@ -872,7 +892,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     });
 
-    // Export the current page's contacts as CSV / vCard.
+    // Export the current page's contacts as CSV / vCard / JSON.
     let pageHost = "page";
     try { pageHost = new URL(tab.url).hostname.replace(/^www\./, ""); } catch (_) {}
     contentEl.querySelectorAll("[data-export]").forEach((btn) => {
@@ -883,6 +903,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         const base = `fmp-contacts-${safeName(pageHost)}-${todayStamp()}`;
         if (btn.dataset.export === "csv") {
           downloadFile(`${base}.csv`, "text/csv", contactsToCsv(contacts));
+        } else if (btn.dataset.export === "json") {
+          downloadFile(`${base}.json`, "application/json", contactsToJson(contacts));
         } else {
           downloadFile(`${base}.vcf`, "text/vcard", contactsToVCard(contacts));
         }
