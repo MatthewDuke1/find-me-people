@@ -362,6 +362,26 @@ function emailQuality(email) {
   return { label: "Direct", tone: "good" }; // named local-part @ a real domain
 }
 
+// ---- Provenance / freshness (counters the "stale data" complaint) ---------
+// FMP reads the LIVE page, so every contact is "found here, just now" — the
+// structural opposite of a months-old database scrape. We surface WHERE on the
+// page each contact came from (its scan source) as a visible trust signal.
+const FMP_SOURCE_LABEL = {
+  mailto: "mailto link", "iframe-mailto": "mailto link",
+  tel: "tel link", "iframe-tel": "tel link", sms: "sms link",
+  address: "address tag", "json-ld": "structured data", microdata: "structured data",
+  meta: "page meta", footer: "footer", "form-value": "form field",
+  aria: "aria label", "data-attr": "data attribute", cf: "decoded",
+  noscript: "noscript", "inline-script": "page script", globals: "page data",
+  shadow: "web component", press: "press contact", "site-override": "verified page",
+  sitemap: "sitemap", "discovered-page": "contact page", fetch: "contact page",
+  text: "page text", "zendesk-kb": "help center",
+};
+function provenanceLabel(source) {
+  const key = String(source || "").replace(/:$/, "");
+  return FMP_SOURCE_LABEL[key] || "this page";
+}
+
 // Build a flat contact list from a content-script scan response.
 function normalizeScanContacts(data, hostname) {
   const out = [];
@@ -905,6 +925,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const escVal = escapeHtml(e.value);
         const id = `email-${idx}`;
         const q = emailQuality(e.value);
+        const provE = provenanceLabel(e.source);
         const tplChips = EMAIL_TEMPLATES.map(
           (t) => `<button class="action-chip" data-template="${t.id}" data-email="${escVal}">${escapeHtml(t.label)}</button>`
         ).join("");
@@ -917,6 +938,7 @@ document.addEventListener("DOMContentLoaded", async () => {
               <div class="value">${escVal}</div>
               <div class="meta">
                 <span class="email-quality q-${q.tone}" title="Email-quality hint (read locally from the address)">${q.label}</span>
+                <span class="provenance" title="Found live on this page just now — read from the page, not a stored database">via ${provE}</span>
                 <span class="score ${scoreClass}">${scoreLabel}</span>
               </div>
             </div>
@@ -945,6 +967,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const escVal = escapeHtml(p.value);
         const escE164 = escapeHtml(toE164(p.value));
         const id = `phone-${idx}`;
+        const provP = provenanceLabel(p.source);
         const voipChips = VOIP_SERVICES.map(
           (s) => `<button class="action-chip" data-voip="${s.id}" data-phone="${escE164}">${escapeHtml(s.name)}</button>`
         ).join("");
@@ -953,7 +976,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             <div class="contact-main" data-copy="${escVal}" data-copy-type="phone" data-copy-score="${p.score}">
               <div class="value">${escVal}</div>
               <div class="meta">
-                <span>Click to copy</span>
+                <span class="provenance" title="Found live on this page just now — read from the page, not a stored database">via ${provP}</span>
                 <span class="score ${scoreClass}">${scoreLabel}</span>
               </div>
             </div>
