@@ -522,10 +522,20 @@
         window.__fmpLastScanMs = Math.round(_ms * 10) / 10;
         const _s = window.__fmpScanStats || (window.__fmpScanStats = { runs: 0, totalMs: 0, maxMs: 0 });
         _s.runs++; _s.totalMs += _ms; if (_ms > _s.maxMs) _s.maxMs = _ms;
+        // Heap readout (Chrome only). This is the WHOLE renderer's JS heap (page
+        // + FMP share it), not FMP-isolated — so it's a leak gauge (does it
+        // climb across a session?), not an exact FMP figure. The Δ-since-load is
+        // the useful signal: it should plateau, not grow unbounded.
+        let _heap = "";
+        if (performance.memory && performance.memory.usedJSHeapSize) {
+          window.__fmpHeapMB = Math.round((performance.memory.usedJSHeapSize / 1048576) * 10) / 10;
+          if (_s.firstHeapMB == null) _s.firstHeapMB = window.__fmpHeapMB;
+          _heap = ` · heap ${window.__fmpHeapMB}MB (Δ${(window.__fmpHeapMB - _s.firstHeapMB).toFixed(1)} since load)`;
+        }
         if (window.localStorage && localStorage.getItem("fmp_perf") === "1") {
           console.debug(
             `[FMP] scan ${window.__fmpLastScanMs}ms · ${results.emails.length}e/${results.phones.length}p · ` +
-            `run #${_s.runs}, avg ${Math.round(_s.totalMs / _s.runs)}ms, max ${Math.round(_s.maxMs)}ms`
+            `run #${_s.runs}, avg ${Math.round(_s.totalMs / _s.runs)}ms, max ${Math.round(_s.maxMs)}ms${_heap}`
           );
         }
       }
@@ -3468,7 +3478,36 @@
       }
     };
 
-    const observer = new MutationObserver(() => {
+    // Relevance gate: most DOM mutations (ad refreshes, infinite-scroll spacers,
+    // class/animation churn) add nothing contact-bearing. Skip the heavy rescan
+    // unless an added node actually carries an @, a phone-ish digit run, or a
+    // mailto/tel/address element — a cheap check that avoids the full scan on
+    // the irrelevant churn that dominates dynamic pages.
+    const _reEmailish = /@/;
+    const _rePhoneish = /\d[\d\s().-]{6,}/;
+    const _contactSel =
+      'a[href^="mailto:"],a[href^="tel:"],a[href^="sms:"],address,[data-email],[data-mail],[data-cfemail]';
+    const mutationsLookRelevant = (mutations) => {
+      for (let mi = 0; mi < mutations.length; mi++) {
+        const added = mutations[mi].addedNodes;
+        for (let ni = 0; ni < added.length; ni++) {
+          const node = added[ni];
+          if (node.nodeType === 3) {
+            const t = node.nodeValue || "";
+            if (_reEmailish.test(t) || _rePhoneish.test(t)) return true;
+          } else if (node.nodeType === 1) {
+            if (node.matches && node.matches(_contactSel)) return true;
+            if (node.querySelector && node.querySelector(_contactSel)) return true;
+            const t = node.textContent || "";
+            if (_reEmailish.test(t) || _rePhoneish.test(t)) return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    const observer = new MutationObserver((mutations) => {
+      if (!mutationsLookRelevant(mutations)) return;
       if (rescanTimer) clearTimeout(rescanTimer);
       rescanTimer = setTimeout(flushRescan, RESCAN_DEBOUNCE_MS);
     });
