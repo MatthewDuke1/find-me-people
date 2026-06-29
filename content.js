@@ -126,6 +126,25 @@
     "operating hours", "working hours",
   ];
 
+  // Big-DOM thresholds: above these, scanPage takes the cheaper path. Normal
+  // pages (well under these counts) keep the full-quality path unchanged.
+  const FMP_BIG_DOM_ELEMENTS = 9000;
+  const FMP_MAX_ANCHORS = 4000;
+
+  // Body text for scanning. innerText forces a layout REFLOW — the single
+  // biggest per-scan cost on large pages. On very large DOMs fall back to
+  // textContent (no reflow, slightly looser block boundaries); small/normal
+  // pages keep innerText for best quality.
+  function fmpBodyText() {
+    if (!document.body) return "";
+    try {
+      if (document.getElementsByTagName("*").length > FMP_BIG_DOM_ELEMENTS) {
+        return document.body.textContent || "";
+      }
+    } catch (_) {}
+    return document.body.innerText || document.body.textContent || "";
+  }
+
   function scanPage() {
     const _scanT0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : 0;
     const results = { emails: [], phones: [], links: [], context: [], hours: [] };
@@ -366,7 +385,7 @@
     // listing / social feed) into the side panel. Emails are unaffected --
     // their @ symbol makes them distinct enough that the noise pattern
     // doesn't appear in practice.
-    const bodyText = document.body ? document.body.innerText : "";
+    const bodyText = fmpBodyText();
     extractFromText(bodyText, document.body, results, seen, { requireProximityAnchor: true });
 
     // 3b. Scan same-origin iframes. Sites that embed contact widgets,
@@ -377,8 +396,13 @@
     // sub-origin) is readable per the same-origin policy.
     scanSameOriginIframes(results, seen);
 
-    // 4. Look for contact page links
-    document.querySelectorAll("a").forEach((a) => {
+    // 4. Look for contact page links (capped on extreme pages — the cap only
+    // bites above FMP_MAX_ANCHORS, which normal pages never reach).
+    const _anchors = document.querySelectorAll("a");
+    const _anchorIter = _anchors.length > FMP_MAX_ANCHORS
+      ? Array.prototype.slice.call(_anchors, 0, FMP_MAX_ANCHORS)
+      : _anchors;
+    _anchorIter.forEach((a) => {
       const href = a.href || "";
       const text = (a.textContent || "").toLowerCase();
       if (
@@ -576,7 +600,7 @@
     });
 
     // Also scan elements containing hours keywords
-    const allText = document.body ? document.body.innerText : "";
+    const allText = fmpBodyText();
     HOURS_KEYWORDS.forEach((kw) => {
       const idx = allText.toLowerCase().indexOf(kw);
       if (idx !== -1) {
