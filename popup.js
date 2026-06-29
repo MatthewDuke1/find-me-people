@@ -153,6 +153,116 @@ function setSelectedClient(id) {
   try { localStorage.setItem(CLIENT_STORAGE_KEY, id); } catch (_) {}
 }
 
+// ---- Draft the First Touch (Pro) ----------------------------------------
+// One-click personalized outreach: fills an outreach template with the page's
+// company + the user's saved sender profile, then opens it pre-written in the
+// chosen mail client. 100% local — no LLM/API, nothing leaves the browser.
+const OUTREACH_TEMPLATES = [
+  {
+    id: "cold-intro", label: "Cold intro",
+    subject: "Quick intro — {senderName} × {company}",
+    body: [
+      "Hi,", "",
+      "I came across {company} and wanted to reach out. {senderPitch}", "",
+      "Would you be open to a quick chat to see if there's a fit? Happy to work around your schedule.", "",
+      "Best,", "{senderName}",
+    ].join("\n"),
+  },
+  {
+    id: "partnership", label: "Partnership",
+    subject: "Partnership idea for {company}",
+    body: [
+      "Hi,", "",
+      "I'm {senderName}. {senderPitch}", "",
+      "I think there's a strong partnership opportunity with {company} — would you be open to exploring it?", "",
+      "Best,", "{senderName}",
+    ].join("\n"),
+  },
+  {
+    id: "recruit", label: "Recruiting",
+    subject: "Opportunity — saw your work at {company}",
+    body: [
+      "Hi,", "",
+      "I came across your work at {company} and was impressed. {senderPitch}", "",
+      "I'm reaching out about an opportunity I think you'd be a great fit for — open to a quick conversation?", "",
+      "Best,", "{senderName}",
+    ].join("\n"),
+  },
+  {
+    id: "follow-up", label: "Follow-up",
+    subject: "Following up — {company}",
+    body: [
+      "Hi,", "",
+      "Just following up on my note about {company} — I know inboxes get busy.", "",
+      "{senderPitch}", "",
+      "Would a short call next week work? Happy to send a couple of times.", "",
+      "Best,", "{senderName}",
+    ].join("\n"),
+  },
+];
+
+const SENDER_KEY = "fmp_sender_profile";
+function getSenderProfile() {
+  try { const s = localStorage.getItem(SENDER_KEY); return s ? JSON.parse(s) : null; } catch (_) { return null; }
+}
+function setSenderProfile(p) {
+  try { localStorage.setItem(SENDER_KEY, JSON.stringify(p)); } catch (_) {}
+}
+
+// Best-guess company name from the page host (acme.com -> "Acme"). Local only.
+function companyFromHost(host) {
+  const p = String(host || "").replace(/^www\./, "").split(".").filter(Boolean);
+  if (!p.length) return "your company";
+  let i = p.length - 2;
+  if (i > 0 && ["co", "com", "org", "net", "gov", "ac", "edu"].includes(p[p.length - 2])) i = p.length - 3;
+  const label = p[Math.max(0, i)] || p[0];
+  return label.replace(/[-_]/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function fillTemplate(s, vars) {
+  return String(s).replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? vars[k] : m));
+}
+
+// Build the personalized draft and open it pre-filled in the chosen mail client.
+function draftOutreach(to, tplId, pageHost) {
+  const tpl = OUTREACH_TEMPLATES.find((t) => t.id === tplId) || OUTREACH_TEMPLATES[0];
+  const profile = getSenderProfile() || { name: "", pitch: "" };
+  const vars = {
+    company: companyFromHost(pageHost),
+    senderName: profile.name || "[Your name]",
+    senderPitch: profile.pitch || "",
+  };
+  const client = EMAIL_CLIENTS.find((c) => c.id === getSelectedClient()) || EMAIL_CLIENTS[0];
+  openUrl(client.buildUrl({ to, subject: fillTemplate(tpl.subject, vars), body: fillTemplate(tpl.body, vars) }));
+  showToast("Draft opened in " + client.name);
+}
+
+// One-time inline capture of the sender profile (name + one-line pitch), shown
+// in the contact's compose panel the first time they draft outreach.
+function showSenderProfileForm(btn, onDone) {
+  const panel = btn.closest(".actions-panel") || btn.parentElement;
+  if (!panel) { onDone(); return; }
+  if (panel.querySelector(".sender-form")) return;
+  const form = document.createElement("div");
+  form.className = "sender-form";
+  form.innerHTML =
+    '<div class="sender-hint">One-time: personalize your drafts</div>' +
+    '<input class="sender-name" type="text" placeholder="Your name" autocomplete="off" />' +
+    '<input class="sender-pitch" type="text" placeholder="One line about you / what you offer" autocomplete="off" />' +
+    '<button class="sender-save">Save &amp; draft</button>';
+  panel.appendChild(form);
+  const nameEl = form.querySelector(".sender-name");
+  nameEl.focus();
+  form.querySelector(".sender-save").addEventListener("click", () => {
+    const name = form.querySelector(".sender-name").value.trim();
+    const pitch = form.querySelector(".sender-pitch").value.trim();
+    if (!name) { nameEl.focus(); return; }
+    setSenderProfile({ name, pitch });
+    form.remove();
+    onDone();
+  });
+}
+
 function toE164(phone) {
   let s = String(phone).replace(/[^\d+]/g, "");
   if (s.startsWith("+")) return s;
@@ -760,6 +870,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         const tplChips = EMAIL_TEMPLATES.map(
           (t) => `<button class="action-chip" data-template="${t.id}" data-email="${escVal}">${escapeHtml(t.label)}</button>`
         ).join("");
+        const outreachChips = OUTREACH_TEMPLATES.map(
+          (t) => `<button class="action-chip outreach-chip" data-outreach="${t.id}" data-email="${escVal}">${escapeHtml(t.label)}</button>`
+        ).join("");
         html += `
           <div class="contact-item">
             <div class="contact-main" data-copy="${escVal}" data-copy-type="email" data-copy-score="${e.score}">
@@ -775,6 +888,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             </div>
             <div class="actions-panel" data-panel="${id}">
               <div class="action-chips">${tplChips}</div>
+              <div class="outreach-block">
+                <div class="outreach-label">&#10022; Draft outreach <span class="pro-tag">PRO</span></div>
+                <div class="action-chips">${outreachChips}</div>
+              </div>
             </div>
           </div>`;
       });
@@ -910,6 +1027,20 @@ document.addEventListener("DOMContentLoaded", async () => {
         const client = EMAIL_CLIENTS.find((c) => c.id === getSelectedClient()) || EMAIL_CLIENTS[0];
         const to = btn.dataset.email;
         if (tpl && to) openUrl(client.buildUrl({ to, subject: tpl.subject, body: tpl.body }));
+      });
+    });
+
+    // Draft outreach (Pro) -> personalized first-touch email pre-filled into the
+    // mail client, using the page's company + the user's saved sender profile.
+    contentEl.querySelectorAll("[data-outreach]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!(await gateExport())) return;
+        const to = btn.dataset.email;
+        if (!to) return;
+        const run = () => draftOutreach(to, btn.dataset.outreach, pageHost);
+        if (!getSenderProfile()) { showSenderProfileForm(btn, run); return; }
+        run();
       });
     });
 
