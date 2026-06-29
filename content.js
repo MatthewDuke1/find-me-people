@@ -127,6 +127,7 @@
   ];
 
   function scanPage() {
+    const _scanT0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : 0;
     const results = { emails: [], phones: [], links: [], context: [], hours: [] };
     const seen = new Set();
     const hoursSeen = new Set();
@@ -510,6 +511,25 @@
     if (crispWorkspace) {
       fetchCrispHelpdesk(crispWorkspace, results, seen);
     }
+
+    // Perf instrumentation. Always records the last scan duration + rolling
+    // stats on window (read window.__fmpLastScanMs / __fmpScanStats anytime);
+    // verbose per-scan console logging only when localStorage.fmp_perf === "1"
+    // (toggle in the page console: localStorage.fmp_perf = "1").
+    try {
+      if (_scanT0) {
+        const _ms = performance.now() - _scanT0;
+        window.__fmpLastScanMs = Math.round(_ms * 10) / 10;
+        const _s = window.__fmpScanStats || (window.__fmpScanStats = { runs: 0, totalMs: 0, maxMs: 0 });
+        _s.runs++; _s.totalMs += _ms; if (_ms > _s.maxMs) _s.maxMs = _ms;
+        if (window.localStorage && localStorage.getItem("fmp_perf") === "1") {
+          console.debug(
+            `[FMP] scan ${window.__fmpLastScanMs}ms · ${results.emails.length}e/${results.phones.length}p · ` +
+            `run #${_s.runs}, avg ${Math.round(_s.totalMs / _s.runs)}ms, max ${Math.round(_s.maxMs)}ms`
+          );
+        }
+      }
+    } catch (_) {}
 
     return results;
   }
@@ -3407,7 +3427,11 @@
   // listener pointing at fresh data without re-registering.
   if (document.body && typeof MutationObserver !== "undefined") {
     const RESCAN_DEBOUNCE_MS = 1000;
+    // Beyond the debounce, rate-limit auto-rescans so a frequently-settling SPA
+    // can't trigger the (heavy) scan more than once every few seconds.
+    const MIN_RESCAN_INTERVAL_MS = 4000;
     let rescanTimer = null;
+    let lastRescanAt = Date.now();
 
     const rescanAndUpdate = () => {
       const fresh = scanPage();
@@ -3426,9 +3450,27 @@
       ensureSidePanel(results);
     };
 
+    // Flush a debounced rescan: rate-limited, and run during browser IDLE time
+    // so the heavy scan yields to the page instead of janking interaction (a
+    // 2s timeout still guarantees it runs on perpetually-busy pages).
+    const flushRescan = () => {
+      const sinceLast = Date.now() - lastRescanAt;
+      if (sinceLast < MIN_RESCAN_INTERVAL_MS) {
+        if (rescanTimer) clearTimeout(rescanTimer);
+        rescanTimer = setTimeout(flushRescan, MIN_RESCAN_INTERVAL_MS - sinceLast);
+        return;
+      }
+      lastRescanAt = Date.now();
+      if (typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(rescanAndUpdate, { timeout: 2000 });
+      } else {
+        rescanAndUpdate();
+      }
+    };
+
     const observer = new MutationObserver(() => {
       if (rescanTimer) clearTimeout(rescanTimer);
-      rescanTimer = setTimeout(rescanAndUpdate, RESCAN_DEBOUNCE_MS);
+      rescanTimer = setTimeout(flushRescan, RESCAN_DEBOUNCE_MS);
     });
     observer.observe(document.body, {
       childList: true,
