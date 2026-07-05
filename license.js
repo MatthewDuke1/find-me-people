@@ -1,4 +1,4 @@
-// Find Me People — LemonSqueezy licensing / Pro entitlement.
+// Sula — LemonSqueezy licensing / Pro entitlement.
 //
 // LemonSqueezy is the Merchant of Record (it handles checkout + global tax).
 // Pro is unlocked by a LemonSqueezy *license key*. The license activate/

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build script for Find Me People
+# Build script for Sula
 # Produces store-ready zips for Chrome Web Store and Firefox AMO.
 # The manifest is unified (service_worker + browser_specific_settings.gecko),
 # so both archives have identical contents -- the separate names just keep
@@ -25,9 +25,9 @@ FILES=(
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
-zip -rq "$OUT_DIR/find-me-people-chrome.zip"  "${FILES[@]}"
-zip -rq "$OUT_DIR/find-me-people-firefox.zip" "${FILES[@]}"
+zip -rq "$OUT_DIR/sula-chrome.zip"  "${FILES[@]}"
+zip -rq "$OUT_DIR/sula-firefox.zip" "${FILES[@]}"
 
 echo "Built:"
-echo "  $OUT_DIR/find-me-people-chrome.zip   -> https://chrome.google.com/webstore/devconsole"
-echo "  $OUT_DIR/find-me-people-firefox.zip  -> https://addons.mozilla.org/developers"
+echo "  $OUT_DIR/sula-chrome.zip   -> https://chrome.google.com/webstore/devconsole"
+echo "  $OUT_DIR/sula-firefox.zip  -> https://addons.mozilla.org/developers"

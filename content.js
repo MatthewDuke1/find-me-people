@@ -1,4 +1,4 @@
-// Find Me People - Content Script
+// Sula - Content Script
 // Scans every page for customer service contact information
 
 (function () {
@@ -1731,7 +1731,7 @@
   // SITE-SPECIFIC OVERRIDE LIBRARY
   //
   // A curated registry of canonical support contacts for the painful-
-  // to-scrape sites users come to Find Me People to escape -- airlines
+  // to-scrape sites users come to Sula to escape -- airlines
   // that hide their phone number behind 4 chatbot prompts, telcos that
   // gate everything behind a login, banks whose contact page is a
   // half-megabyte JS app.
@@ -3773,7 +3773,7 @@
   // surface-level parity with the toolbar popup. Five capabilities the
   // popup had that the side panel was missing -- now added:
   //
-  //   1. "Rate Find Me People" link in the footer (browser-aware:
+  //   1. "Rate Sula" link in the footer (browser-aware:
   //      Firefox -> AMO, Chrome / Edge / Brave / Arc -> Web Store).
   //   2. "Rescan" button in the footer for manual SPA-hydration cases
   //      where the auto-rescan MutationObserver hasn't fired yet.
@@ -4154,13 +4154,13 @@
       </div>`;
 
     let html = `
-      <div class="tab" data-sp-action="expand" role="button" aria-label="Open Find Me People panel" title="Find Me People (${total} contact${totalSuffix})">
+      <div class="tab" data-sp-action="expand" role="button" aria-label="Open Sula panel" title="Sula (${total} contact${totalSuffix})">
         <span class="tab-icon">&#128100;</span>
         ${total > 0 ? `<span class="tab-count">${total}</span>` : ""}
       </div>
-      <div class="panel" role="dialog" aria-label="Find Me People contacts">
+      <div class="panel" role="dialog" aria-label="Sula contacts">
         <div class="header">
-          <span class="title"><span class="logo">&#128100;</span> Find Me People</span>
+          <span class="title"><span class="logo">&#128100;</span> Sula</span>
           <button class="icon-btn" data-sp-action="collapse" aria-label="Collapse">&minus;</button>
         </div>
         ${tabsHtml}
@@ -4293,7 +4293,7 @@
           <span class="footer-sep">&middot;</span>
           <button class="text-btn" data-sp-action="dismiss-site">Hide on this site</button>
           <span class="footer-sep">&middot;</span>
-          <a class="text-btn rate" href="${spGetReviewUrl()}" target="_blank" rel="noopener" data-sp-action="rate" title="Rate Find Me People"><span class="star">&#9733;</span> Rate</a>
+          <a class="text-btn rate" href="${spGetReviewUrl()}" target="_blank" rel="noopener" data-sp-action="rate" title="Rate Sula"><span class="star">&#9733;</span> Rate</a>
         </div>
       </div>
       <div class="copied-toast">Copied</div>

@@ -1,4 +1,4 @@
-# Find Me People
+# Sula
 
 A browser extension that bypasses chatbots and surfaces the real customer service emails and phone numbers companies hide behind support widgets. It detects chatbot vendors (Intercom, Zendesk, Drift, Crisp, HubSpot, Tidio, LiveChat, Tawk, Freshchat, Olark) and reads the same public knowledge base the chatbot was trained on -- no chat-UI dance, no account, 100% local.
 
@@ -28,7 +28,7 @@ The numbers are staggering -- and getting worse every year:
 
 The average American now manages 10-15+ service relationships (phone, internet, insurance, bank, credit cards, streaming, utilities, healthcare, subscriptions). With 74% experiencing problems and 86% requiring repeat contacts, the typical person faces **60-80 customer service interactions per year** -- each one beginning with the same frustrating search for how to actually reach someone.
 
-| | Without Find Me People | With Find Me People |
+| | Without Sula | With Sula |
 |---|---|---|
 | Time finding contact info | 10-15 min | ~5 seconds |
 | Average hold + chatbot time | 20-30 min | 20-30 min |
@@ -37,13 +37,13 @@ The average American now manages 10-15+ service relationships (phone, internet, 
 | **Total time lost to support/year** | **45-60+ hours** | **25-40 hours** |
 | **Time saved** | -- | **~20+ hours/year** |
 
-That's **more than two full workdays** you reclaim every year on search time alone. And because Find Me People surfaces hidden support pages and direct contact links that bypass chatbot funnels entirely, the total time saved grows even further -- cutting your annual support burden from 45-60 hours down significantly.
+That's **more than two full workdays** you reclaim every year on search time alone. And because Sula surfaces hidden support pages and direct contact links that bypass chatbot funnels entirely, the total time saved grows even further -- cutting your annual support burden from 45-60 hours down significantly.
 
-> The annoyance economy thrives because companies bet you'll give up before you find the right number. **Find Me People breaks that bet.**
+> The annoyance economy thrives because companies bet you'll give up before you find the right number. **Sula breaks that bet.**
 
 The result: reaching a real human for help has become a skill, not a right.
 
-**Find Me People** fixes this by scanning every website you visit and surfacing customer service contact information instantly -- before you even have to look for it.
+**Sula** fixes this by scanning every website you visit and surfacing customer service contact information instantly -- before you even have to look for it.
 
 ## Changelog
 
@@ -100,7 +100,7 @@ Scan-quality patch driven by two bugs an early Product Hunt user reported using 
 
 Side panel feature parity + a scroll-position bug fix. The pull-tab panel now offers the same surface the toolbar popup does, and stays put while you scroll it.
 
-- **Side panel feature parity with the toolbar popup.** Five capabilities the popup had that the side panel was missing, now bundled together: a "Rate Find Me People" footer link (browser-aware: Firefox -> AMO, Chromium -> Chrome Web Store /reviews), a manual "Rescan" footer button (covers the rare cases the `MutationObserver` debounce misses), a top-of-panel hours banner that reads the page's structured/schema/microdata opening hours and labels Open / Closed / Unknown with a status dot, a Support pages section listing every contact-adjacent link the scan surfaced (Contact / Support / Help / FAQ etc.) so they survive across the Now / History view tabs, and a History tab inside the panel that mirrors the popup's history list with the same `chrome.storage.local.fmp_history` key and entry shape.
+- **Side panel feature parity with the toolbar popup.** Five capabilities the popup had that the side panel was missing, now bundled together: a "Rate Sula" footer link (browser-aware: Firefox -> AMO, Chromium -> Chrome Web Store /reviews), a manual "Rescan" footer button (covers the rare cases the `MutationObserver` debounce misses), a top-of-panel hours banner that reads the page's structured/schema/microdata opening hours and labels Open / Closed / Unknown with a status dot, a Support pages section listing every contact-adjacent link the scan surfaced (Contact / Support / Help / FAQ etc.) so they survive across the Now / History view tabs, and a History tab inside the panel that mirrors the popup's history list with the same `chrome.storage.local.fmp_history` key and entry shape.
 - **Bug fix: side panel no longer bounces to the top while you scroll.** The auto-rescan `MutationObserver` was rebuilding the panel's shadow DOM every ~1s on active pages (lazy images, sticky headers, infinite-scroll feeds all trigger it), throwing away the `.scroll` element along with its `scrollTop`. The re-render path now snapshots scroll position alongside the existing `wasExpanded` / `wasOpenRows` state and restores it after the rebuild, so mid-scroll users stay where they are.
 
 ### 1.4.0 -- 2026-05-10
@@ -128,7 +128,7 @@ Major release. Cross-browser support and the new Compose / Call workflows.
 - **Firefox support.** Single MV3 codebase now installs in both Chrome and Firefox 121+ -- paired `service_worker` + `background.scripts` fallback, plus `browser_specific_settings.gecko` (id, `strict_min_version`, `data_collection_permissions: none`) for AMO signing.
 - **Compose templates for emails.** Each email card has a "Compose" toggle with chips for **Blank** (just open the chosen client with `To:` filled), Refund, Complaint, Cancel, Billing, and Support. Templates open in your preferred client -- Default mail app, Gmail web, or Outlook web -- and that choice persists in `localStorage`.
 - **Call-via deep links for phone numbers.** Each phone card has a "Call" toggle that hands the number off to your dialer of choice -- system phone, WhatsApp, Google Voice, FaceTime, or Microsoft Teams. Numbers are auto-normalized to E.164 first.
-- **Rate prompt.** A discrete `★ Rate Find Me People` link sits in the popup footer at all times, plus a one-time encouragement toast after you've copied 5 contacts. Browser-aware: Firefox users land on AMO, Chrome users on the Web Store.
+- **Rate prompt.** A discrete `★ Rate Sula` link sits in the popup footer at all times, plus a one-time encouragement toast after you've copied 5 contacts. Browser-aware: Firefox users land on AMO, Chrome users on the Web Store.
 - **Compose reliability fix.** HTTPS opens (Gmail web, Outlook web, WhatsApp web, Google Voice, Teams) now route through `chrome.tabs.create` instead of a programmatic anchor click, so the MV3 popup-blocker no longer silently suppresses the new tab. Protocol URIs (`mailto:`, `tel:`, `facetime-audio:`) still use anchor click so OS handlers register them.
 - **Build scripts.** `build.sh` (bash) and `build.ps1` (PowerShell) produce store-ready zips for both stores from a single source tree.
 
@@ -222,8 +222,8 @@ Run the build script from the project root:
 
 This produces:
 
-- `dist/find-me-people-chrome.zip`  -> upload to [Chrome Web Store developer console](https://chrome.google.com/webstore/devconsole)
-- `dist/find-me-people-firefox.zip` -> upload to [addons.mozilla.org/developers](https://addons.mozilla.org/developers/)
+- `dist/sula-chrome.zip`  -> upload to [Chrome Web Store developer console](https://chrome.google.com/webstore/devconsole)
+- `dist/sula-firefox.zip` -> upload to [addons.mozilla.org/developers](https://addons.mozilla.org/developers/)
 
 Both archives share the same unified manifest -- the split naming just keeps the per-store upload workflow explicit.
 
@@ -288,7 +288,7 @@ find-me-people/
 └── README.md
 ```
 
-## Why "Find Me People"?
+## Why "Sula"?
 
 Because when something goes wrong with a product or service, you don't want a chatbot. You don't want a knowledge base. You don't want to submit a ticket into a void. You want to talk to a person.
 
