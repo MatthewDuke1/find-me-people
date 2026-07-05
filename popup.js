@@ -477,6 +477,27 @@ function downloadFile(filename, mimeType, text) {
 
 // Lightweight toast reusing the existing #copied element (defaults back to the
 // "Copied to clipboard" label so copy actions are unaffected).
+// One-time rebrand notice for people who updated from a 1.x "Find Me People"
+// build. background.js sets the flag on a 1.x -> 2.x update only, so fresh
+// installs never see this. Dismissing clears the flag for good.
+function renderRebrandNotice() {
+  if (!chrome.storage || !chrome.storage.local) return;
+  chrome.storage.local.get(["sula_rebrand_notice"], (r) => {
+    if (!r.sula_rebrand_notice) return;
+    const host = document.getElementById("rebrand-notice");
+    if (!host) return;
+    host.innerHTML =
+      '<div class="rebrand-banner">' +
+      "<span><strong>Find Me People is now Sula.</strong> Same extension, same privacy promise, new name.</span>" +
+      '<button class="rebrand-dismiss" title="Dismiss" aria-label="Dismiss">&#10005;</button>' +
+      "</div>";
+    host.querySelector(".rebrand-dismiss").addEventListener("click", () => {
+      chrome.storage.local.remove("sula_rebrand_notice");
+      host.remove();
+    });
+  });
+}
+
 function showToast(msg) {
   const el = document.getElementById("copied");
   if (!el) return;
@@ -733,6 +754,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Pro upgrade/activate footer (no-op visually until license.js PRO_ENFORCED).
   if (typeof renderProFooter === "function") renderProFooter();
+
+  // Rebrand notice (only renders when the update-from-1.x flag is set).
+  renderRebrandNotice();
 
   // Side panel master toggle -- persisted to chrome.storage.local so the
   // content scripts on every tab can read it. Default is ON.

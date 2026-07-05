@@ -18,6 +18,19 @@
   }
 })();
 
+// Rebrand notice gate. Only people updating from a 1.x version ever knew the
+// extension as "Find Me People", so only they get the one-time popup notice.
+// Fresh installs (reason: "install") and future 2.x -> 2.x updates skip it.
+chrome.runtime.onInstalled.addListener((details) => {
+  if (
+    details.reason === "update" &&
+    details.previousVersion &&
+    details.previousVersion.startsWith("1.")
+  ) {
+    chrome.storage.local.set({ sula_rebrand_notice: true });
+  }
+});
+
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.action === "updateBadge" && sender.tab) {
     const count = msg.count || 0;
