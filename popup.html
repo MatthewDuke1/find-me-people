@@ -338,6 +338,20 @@
       transition: color 0.15s;
     }
     .rate-footer a:hover { color: #60a5fa; }
+
+    /* One-time rebrand notice (shown only to 1.x updaters) */
+    .rebrand-banner {
+      margin: 10px 16px 0; padding: 9px 11px;
+      background: rgba(96,165,250,0.12); border: 1px solid rgba(96,165,250,0.35);
+      border-radius: 8px; font-size: 11.5px; line-height: 1.45; color: #d4d4d8;
+      display: flex; align-items: flex-start; gap: 8px;
+    }
+    .rebrand-banner strong { color: #fafafa; }
+    .rebrand-dismiss {
+      background: none; border: none; color: #71717a; cursor: pointer;
+      font-size: 12px; font-family: inherit; padding: 0 2px; flex-shrink: 0;
+    }
+    .rebrand-dismiss:hover { color: #fafafa; }
     .rate-footer .star { color: #fbbf24; }
 
     /* Pro / upgrade footer (LemonSqueezy) */
@@ -379,6 +393,8 @@
     <h1><img class="brandmark" src="icons/icon48.png" alt="" /> Sula</h1>
     <div class="site" id="site-url">Scanning...</div>
   </div>
+
+  <div id="rebrand-notice"></div>
 
   <div class="view-tabs">
     <button class="view-tab active" data-view="now">On this page</button>
