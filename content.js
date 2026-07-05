@@ -4315,7 +4315,7 @@
     .tab {
       width: 40px;
       height: 88px;
-      background: linear-gradient(135deg, #2d8a2e, #4ade80);
+      background: linear-gradient(135deg, #2563eb, #60a5fa);
       border-radius: 12px 0 0 12px;
       display: flex;
       align-items: center;
@@ -4336,7 +4336,7 @@
       top: 4px;
       right: 4px;
       background: #ffffff;
-      color: #2d8a2e;
+      color: #1d4ed8;
       font-size: 10px;
       font-weight: 700;
       min-width: 16px;
@@ -4380,7 +4380,7 @@
     .logo {
       width: 22px;
       height: 22px;
-      background: linear-gradient(135deg, #2d8a2e, #4ade80);
+      background: linear-gradient(135deg, #2563eb, #60a5fa);
       border-radius: 50%;
       display: inline-flex;
       align-items: center;
@@ -4429,7 +4429,7 @@
       margin-bottom: 5px;
       transition: border-color 0.15s;
     }
-    .row:hover { border-color: #4ade80; }
+    .row:hover { border-color: #60a5fa; }
     .row-main { cursor: pointer; }
     .row-toggle {
       background: none;
@@ -4444,7 +4444,7 @@
       gap: 3px;
       transition: color 0.15s;
     }
-    .row-toggle:hover { color: #4ade80; }
+    .row-toggle:hover { color: #60a5fa; }
     .row-toggle .caret { display: inline-block; transition: transform 0.2s; }
     .row-toggle.open .caret { transform: rotate(180deg); }
     .row-actions { margin-top: 6px; display: none; }
@@ -4505,11 +4505,11 @@
       transition: all 0.15s;
       white-space: nowrap;
     }
-    .chip:hover { border-color: #4ade80; color: #4ade80; }
+    .chip:hover { border-color: #60a5fa; color: #60a5fa; }
     .chip.selected {
-      background: rgba(74,222,128,0.15);
-      border-color: #4ade80;
-      color: #4ade80;
+      background: rgba(96,165,250,0.15);
+      border-color: #60a5fa;
+      color: #60a5fa;
     }
     .chip.sm { font-size: 10px; padding: 2px 7px; }
     .val {
@@ -4569,15 +4569,15 @@
       text-decoration: underline;
       text-decoration-color: #27272a;
     }
-    .text-btn:hover { color: #4ade80; text-decoration-color: #4ade80; }
+    .text-btn:hover { color: #60a5fa; text-decoration-color: #60a5fa; }
     .footer-sep { color: #27272a; }
     .copied-toast {
       position: absolute;
       bottom: 14px;
       left: 50%;
       transform: translateX(-50%);
-      background: #4ade80;
-      color: #0a0a0a;
+      background: #60a5fa;
+      color: #071022;
       font-size: 11px;
       font-weight: 700;
       padding: 4px 12px;
@@ -4603,13 +4603,13 @@
       transition: color 0.15s, border-color 0.15s;
     }
     .view-tab:hover { color: #fafafa; }
-    .view-tab.active { color: #4ade80; border-bottom-color: #4ade80; }
+    .view-tab.active { color: #60a5fa; border-bottom-color: #60a5fa; }
 
     /* ----- Hours banner + weekly list ----- */
     .hours-banner {
       margin: 8px 14px 6px; padding: 9px 12px;
-      background: linear-gradient(135deg, rgba(74,222,128,0.08), rgba(74,222,128,0.02));
-      border: 1px solid rgba(74,222,128,0.2); border-radius: 8px;
+      background: linear-gradient(135deg, rgba(96,165,250,0.08), rgba(96,165,250,0.02));
+      border: 1px solid rgba(96,165,250,0.2); border-radius: 8px;
       display: flex; align-items: center; gap: 9px;
       flex-shrink: 0;
     }
@@ -4662,10 +4662,10 @@
     .link-item {
       display: block; padding: 7px 10px; margin-bottom: 4px;
       background: #111113; border: 1px solid #1e1e1e; border-radius: 6px;
-      text-decoration: none; color: #4ade80; font-size: 12px;
+      text-decoration: none; color: #60a5fa; font-size: 12px;
       transition: border-color 0.15s;
     }
-    .link-item:hover { border-color: #4ade80; }
+    .link-item:hover { border-color: #60a5fa; }
     .link-item .li-text { font-weight: 600; }
     .link-item .li-path {
       display: block; font-size: 10px; color: #52525b; margin-top: 2px;
@@ -4680,14 +4680,14 @@
       color: #fafafa; font-size: 11px; font-family: inherit;
       width: calc(100% - 28px); outline: none;
     }
-    .history-search:focus { border-color: #4ade80; }
+    .history-search:focus { border-color: #60a5fa; }
     .history-list { padding: 0 14px 4px; }
     .history-item {
       background: #111113; border: 1px solid #1e1e1e; border-radius: 6px;
       padding: 6px 9px; margin-bottom: 4px; cursor: pointer;
       transition: border-color 0.15s;
     }
-    .history-item:hover { border-color: #4ade80; }
+    .history-item:hover { border-color: #60a5fa; }
     .hi-row1 { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
     .hi-value { font-size: 12px; font-weight: 600; color: #fafafa; word-break: break-all; }
     .hi-when { font-size: 9px; color: #71717a; white-space: nowrap; flex-shrink: 0; }
