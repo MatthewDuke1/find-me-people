@@ -1,6 +1,6 @@
 # Pro licensing (LemonSqueezy)
 
-Find Me People monetizes via **LemonSqueezy** (Merchant of Record — it runs
+Sula monetizes via **LemonSqueezy** (Merchant of Record — it runs
 checkout and handles global sales tax/VAT). Pro is unlocked by a LemonSqueezy
 **license key**; the extension validates it directly against LemonSqueezy's
 license API (no backend, no API secret shipped).

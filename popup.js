@@ -1,4 +1,4 @@
-// Find Me People - Popup Script
+// Sula - Popup Script
 
 // Click-to-call deep links: hand the phone number off to the user's chosen app
 const VOIP_SERVICES = [
@@ -453,7 +453,7 @@ function contactsToVCard(contacts) {
     ];
     Array.from(new Set(g.emails)).forEach((e) => lines.push("EMAIL;TYPE=INTERNET:" + vEsc(e)));
     Array.from(new Set(g.phones)).forEach((p) => lines.push("TEL;TYPE=VOICE:" + vEsc(p)));
-    lines.push("NOTE:" + vEsc("Found via Find Me People — " + org));
+    lines.push("NOTE:" + vEsc("Found via Sula — " + org));
     lines.push("END:VCARD");
     cards.push(lines.join("\r\n"));
   });
@@ -525,7 +525,7 @@ function isValidWebhookUrl(url) {
 // object with metadata + a contacts array (each tagged with its source host).
 function buildWebhookPayload(contacts, hostname) {
   return {
-    source: "Find Me People",
+    source: "Sula",
     hostname: hostname || "",
     exportedAt: new Date().toISOString(),
     count: contacts.length,
@@ -585,7 +585,7 @@ async function renderProFooter() {
   try { pro = await isPro(); } catch (_) {}
   if (pro) {
     el.innerHTML =
-      '<div class="pro-row"><span class="pro-label"><span class="bolt">&#9889;</span> Find Me People <span class="pro-pill on">PRO</span></span>' +
+      '<div class="pro-row"><span class="pro-label"><span class="bolt">&#9889;</span> Sula <span class="pro-pill on">PRO</span></span>' +
       '<button class="pro-manage" id="pro-deactivate">Deactivate</button></div>';
     const d = document.getElementById("pro-deactivate");
     if (d) d.addEventListener("click", async () => { await deactivateLicense(); renderProFooter(); });
@@ -714,7 +714,7 @@ function renderReviewToastHtml() {
   return `
     <div class="review-toast" id="review-toast">
       <button class="review-toast-close" data-review-action="dismiss" aria-label="Dismiss">&times;</button>
-      <div class="review-toast-title"><span class="star">&#9733;</span> Enjoying Find Me People?</div>
+      <div class="review-toast-title"><span class="star">&#9733;</span> Enjoying Sula?</div>
       <div class="review-toast-body">A quick review really helps reach more people who need this.</div>
       <div class="review-toast-actions">
         <button class="review-btn-primary" data-review-action="rate">Rate it</button>
@@ -825,7 +825,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           if (!(await gateExport())) return;
           const contacts = historyToContacts(hist);
           if (contacts.length === 0) { showToast("Nothing to export"); return; }
-          const base = `fmp-history-${todayStamp()}`;
+          const base = `sula-history-${todayStamp()}`;
           if (btn.dataset.exportHistory === "csv") {
             downloadFile(`${base}.csv`, "text/csv", contactsToCsv(contacts));
           } else {
@@ -1150,7 +1150,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!(await gateExport())) return;
         const contacts = normalizeScanContacts(window._lastScanResults || data, pageHost);
         if (contacts.length === 0) { showToast("Nothing to export"); return; }
-        const base = `fmp-contacts-${safeName(pageHost)}-${todayStamp()}`;
+        const base = `sula-contacts-${safeName(pageHost)}-${todayStamp()}`;
         if (btn.dataset.export === "csv") {
           downloadFile(`${base}.csv`, "text/csv", contactsToCsv(contacts));
         } else {

@@ -1,4 +1,4 @@
-# Build script for Find Me People (Windows / PowerShell)
+# Build script for Sula (Windows / PowerShell)
 # Produces store-ready zips for Chrome Web Store and Firefox AMO.
 # Uses System.IO.Compression directly so entry paths use forward slashes
 # (required by the ZIP spec; AMO rejects backslash entries).
@@ -51,8 +51,8 @@ function Write-ExtensionZip {
   }
 }
 
-$ChromeZip  = Join-Path $OutDir "find-me-people-chrome.zip"
-$FirefoxZip = Join-Path $OutDir "find-me-people-firefox.zip"
+$ChromeZip  = Join-Path $OutDir "sula-chrome.zip"
+$FirefoxZip = Join-Path $OutDir "sula-firefox.zip"
 
 Write-ExtensionZip -ZipPath $ChromeZip
 Write-ExtensionZip -ZipPath $FirefoxZip

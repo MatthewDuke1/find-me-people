@@ -1,4 +1,4 @@
-// Find Me People - Background Service Worker
+// Sula - Background Service Worker
 // Manages badge count and tab-level state
 
 // Post-uninstall survey. When the user removes the extension, Chrome opens
