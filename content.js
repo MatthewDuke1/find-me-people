@@ -135,7 +135,7 @@
   // biggest per-scan cost on large pages. On very large DOMs fall back to
   // textContent (no reflow, slightly looser block boundaries); small/normal
   // pages keep innerText for best quality.
-  function fmpBodyText() {
+  function sulaBodyText() {
     if (!document.body) return "";
     try {
       if (document.getElementsByTagName("*").length > SULA_BIG_DOM_ELEMENTS) {
@@ -385,7 +385,7 @@
     // listing / social feed) into the side panel. Emails are unaffected --
     // their @ symbol makes them distinct enough that the noise pattern
     // doesn't appear in practice.
-    const bodyText = fmpBodyText();
+    const bodyText = sulaBodyText();
     extractFromText(bodyText, document.body, results, seen, { requireProximityAnchor: true });
 
     // 3b. Scan same-origin iframes. Sites that embed contact widgets,
@@ -537,14 +537,14 @@
     }
 
     // Perf instrumentation. Always records the last scan duration + rolling
-    // stats on window (read window.__fmpLastScanMs / __fmpScanStats anytime);
+    // stats on window (read window.__sulaLastScanMs / __sulaScanStats anytime);
     // verbose per-scan console logging only when localStorage.fmp_perf === "1"
     // (toggle in the page console: localStorage.fmp_perf = "1").
     try {
       if (_scanT0) {
         const _ms = performance.now() - _scanT0;
-        window.__fmpLastScanMs = Math.round(_ms * 10) / 10;
-        const _s = window.__fmpScanStats || (window.__fmpScanStats = { runs: 0, totalMs: 0, maxMs: 0 });
+        window.__sulaLastScanMs = Math.round(_ms * 10) / 10;
+        const _s = window.__sulaScanStats || (window.__sulaScanStats = { runs: 0, totalMs: 0, maxMs: 0 });
         _s.runs++; _s.totalMs += _ms; if (_ms > _s.maxMs) _s.maxMs = _ms;
         // Heap readout (Chrome only). This is the WHOLE renderer's JS heap (page
         // + Sula share it), not Sula-isolated — so it's a leak gauge (does it
@@ -552,13 +552,13 @@
         // the useful signal: it should plateau, not grow unbounded.
         let _heap = "";
         if (performance.memory && performance.memory.usedJSHeapSize) {
-          window.__fmpHeapMB = Math.round((performance.memory.usedJSHeapSize / 1048576) * 10) / 10;
-          if (_s.firstHeapMB == null) _s.firstHeapMB = window.__fmpHeapMB;
-          _heap = ` · heap ${window.__fmpHeapMB}MB (Δ${(window.__fmpHeapMB - _s.firstHeapMB).toFixed(1)} since load)`;
+          window.__sulaHeapMB = Math.round((performance.memory.usedJSHeapSize / 1048576) * 10) / 10;
+          if (_s.firstHeapMB == null) _s.firstHeapMB = window.__sulaHeapMB;
+          _heap = ` · heap ${window.__sulaHeapMB}MB (Δ${(window.__sulaHeapMB - _s.firstHeapMB).toFixed(1)} since load)`;
         }
         if (window.localStorage && localStorage.getItem("fmp_perf") === "1") {
           console.debug(
-            `[Sula] scan ${window.__fmpLastScanMs}ms · ${results.emails.length}e/${results.phones.length}p · ` +
+            `[Sula] scan ${window.__sulaLastScanMs}ms · ${results.emails.length}e/${results.phones.length}p · ` +
             `run #${_s.runs}, avg ${Math.round(_s.totalMs / _s.runs)}ms, max ${Math.round(_s.maxMs)}ms${_heap}`
           );
         }
@@ -610,7 +610,7 @@
     });
 
     // Also scan elements containing hours keywords
-    const allText = fmpBodyText();
+    const allText = sulaBodyText();
     HOURS_KEYWORDS.forEach((kw) => {
       const idx = allText.toLowerCase().indexOf(kw);
       if (idx !== -1) {
@@ -837,14 +837,14 @@
     let json = "";
     try {
       bridge = document.createElement("div");
-      bridge.id = "fmp-globals-bridge";
+      bridge.id = "sula-globals-bridge";
       bridge.style.display = "none";
       document.body.appendChild(bridge);
 
       const script = document.createElement("script");
       // Single self-executing IIFE: read each target, JSON-stringify with a
       // replacer that skips functions / DOM nodes, stash on bridge.
-      script.textContent = "(function(){try{var T=['__NEXT_DATA__','__INITIAL_STATE__','__PRELOADED_STATE__','__NUXT__','__APOLLO_STATE__','__REACT_QUERY_STATE__','__remixContext','__sveltekit','appConfig','siteConfig','pageProps'];var o={};for(var i=0;i<T.length;i++){try{var v=window[T[i]];if(v!=null)o[T[i]]=v;}catch(e){}}try{if(window.Shopify)o.Shopify=window.Shopify;}catch(e){}var seen=new WeakSet();var rep=function(k,v){if(v&&typeof v==='object'){if(seen.has(v))return undefined;seen.add(v);}if(typeof v==='function')return undefined;if(v&&v.nodeType)return undefined;return v;};var s='';try{s=JSON.stringify(o,rep);}catch(e){}if(s&&s.length>500000)s=s.substring(0,500000);var el=document.getElementById('fmp-globals-bridge');if(el)el.setAttribute('data-globals',s||'');}catch(e){}})();";
+      script.textContent = "(function(){try{var T=['__NEXT_DATA__','__INITIAL_STATE__','__PRELOADED_STATE__','__NUXT__','__APOLLO_STATE__','__REACT_QUERY_STATE__','__remixContext','__sveltekit','appConfig','siteConfig','pageProps'];var o={};for(var i=0;i<T.length;i++){try{var v=window[T[i]];if(v!=null)o[T[i]]=v;}catch(e){}}try{if(window.Shopify)o.Shopify=window.Shopify;}catch(e){}var seen=new WeakSet();var rep=function(k,v){if(v&&typeof v==='object'){if(seen.has(v))return undefined;seen.add(v);}if(typeof v==='function')return undefined;if(v&&v.nodeType)return undefined;return v;};var s='';try{s=JSON.stringify(o,rep);}catch(e){}if(s&&s.length>500000)s=s.substring(0,500000);var el=document.getElementById('sula-globals-bridge');if(el)el.setAttribute('data-globals',s||'');}catch(e){}})();";
       document.documentElement.appendChild(script);
       // The <script> executes synchronously on append; remove immediately so
       // we don't leave it in the DOM for site code to trip over.
@@ -1072,7 +1072,7 @@
     let json = "";
     try {
       bridge = document.createElement("div");
-      bridge.id = "fmp-chatbot-bridge";
+      bridge.id = "sula-chatbot-bridge";
       bridge.style.display = "none";
       document.body.appendChild(bridge);
 
@@ -1104,7 +1104,7 @@
         // Olark: siteId in olark.configuration.
         "try{if(window.olark){var sid=null;try{sid=(window.olark.configuration&&window.olark.configuration.siteId)||null;}catch(e){}d.olark={site_id:sid};}}catch(e){}" +
         // Serialize with the same WeakSet-cycle-guard pattern as scanPageGlobals.
-        "var sn=new WeakSet();var rp=function(k,v){if(v&&typeof v==='object'){if(sn.has(v))return undefined;sn.add(v);}if(typeof v==='function')return undefined;if(v&&v.nodeType)return undefined;return v;};var s='';try{s=JSON.stringify(d,rp);}catch(e){}if(s&&s.length>50000)s=s.substring(0,50000);var el=document.getElementById('fmp-chatbot-bridge');if(el)el.setAttribute('data-chatbot',s||'');}catch(e){}})();";
+        "var sn=new WeakSet();var rp=function(k,v){if(v&&typeof v==='object'){if(sn.has(v))return undefined;sn.add(v);}if(typeof v==='function')return undefined;if(v&&v.nodeType)return undefined;return v;};var s='';try{s=JSON.stringify(d,rp);}catch(e){}if(s&&s.length>50000)s=s.substring(0,50000);var el=document.getElementById('sula-chatbot-bridge');if(el)el.setAttribute('data-chatbot',s||'');}catch(e){}})();";
       document.documentElement.appendChild(script);
       if (script.parentNode) script.parentNode.removeChild(script);
 
@@ -3297,19 +3297,19 @@
   const SULA_CACHE_TTL_MS = 60 * 60 * 1000;
   const SULA_CACHE_MAX_ENTRIES = 50;
 
-  function fmpCacheHostKey() {
+  function sulaCacheHostKey() {
     try {
       return (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
     } catch (_) { return ""; }
   }
 
-  function fmpCacheRead() {
+  function sulaCacheRead() {
     return new Promise((resolve) => {
       if (!chrome.storage || !chrome.storage.local) return resolve(null);
       try {
         chrome.storage.local.get([SULA_CACHE_KEY], (r) => {
           const map = (r && r[SULA_CACHE_KEY]) || {};
-          const host = fmpCacheHostKey();
+          const host = sulaCacheHostKey();
           if (!host || !map[host]) return resolve(null);
           const entry = map[host];
           if (!entry || typeof entry.savedAt !== "number") return resolve(null);
@@ -3322,9 +3322,9 @@
     });
   }
 
-  function fmpCacheWrite(results) {
+  function sulaCacheWrite(results) {
     if (!chrome.storage || !chrome.storage.local) return;
-    const host = fmpCacheHostKey();
+    const host = sulaCacheHostKey();
     if (!host) return;
     // Only cache substantive results -- empty pages would waste space.
     const total = (results.emails || []).length + (results.phones || []).length;
@@ -3359,7 +3359,7 @@
   // exist in live results (via phoneKey, lowercase email, or URL
   // string) are skipped; new ones get pushed with a "cached" source
   // tag suffix preserved if present.
-  function fmpMergeCachedIntoResults(cached, results, seen) {
+  function sulaMergeCachedIntoResults(cached, results, seen) {
     if (!cached) return 0;
     let added = 0;
     (cached.emails || []).forEach((e) => {
@@ -3400,7 +3400,7 @@
   // and the live scan didn't already find the same items, the cached
   // contacts merge in and the side panel re-renders. If the live scan
   // already had everything cached, nothing visible changes.
-  fmpCacheRead().then((cached) => {
+  sulaCacheRead().then((cached) => {
     if (!cached) return;
     const cacheSeen = new Set();
     results.emails.forEach((e) => cacheSeen.add((e.value || "").toLowerCase()));
@@ -3409,7 +3409,7 @@
       cacheSeen.add(phoneKey(cleaned));
     });
     results.links.forEach((l) => l && l.url && cacheSeen.add(l.url));
-    const added = fmpMergeCachedIntoResults(cached, results, cacheSeen);
+    const added = sulaMergeCachedIntoResults(cached, results, cacheSeen);
     if (added > 0) {
       // Re-render the side panel to show the hydrated contacts.
       try { ensureSidePanel(results); } catch (_) {}
@@ -3424,9 +3424,9 @@
   // Save scan results to cache after a short settle (give the async
   // background fetches a chance to populate). Uses requestIdleCallback
   // when available; otherwise a 3-second timeout.
-  function fmpScheduleCacheWrite() {
+  function sulaScheduleCacheWrite() {
     const writer = () => {
-      try { fmpCacheWrite(results); } catch (_) {}
+      try { sulaCacheWrite(results); } catch (_) {}
     };
     if (typeof window.requestIdleCallback === "function") {
       window.requestIdleCallback(writer, { timeout: 5000 });
@@ -3434,7 +3434,7 @@
       setTimeout(writer, 3000);
     }
   }
-  fmpScheduleCacheWrite();
+  sulaScheduleCacheWrite();
 
   // Listen for popup requests
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -3674,7 +3674,7 @@
   // is stored under a hostname-keyed entry with a 7-day TTL.
   // ===================================================================
 
-  const SP_HOST_ID = "fmp-side-panel-host";
+  const SP_HOST_ID = "sula-side-panel-host";
   const SP_MASTER_KEY = "fmp_side_panel_enabled";
   const SP_DISMISS_PREFIX = "fmp_side_panel_dismissed_";
   const SP_DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
