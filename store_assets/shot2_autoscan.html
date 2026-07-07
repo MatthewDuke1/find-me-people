@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  html, body { width: 1280px; height: 800px; }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    color: #f8fafc; overflow: hidden; position: relative;
+    background:
+      radial-gradient(ellipse at 22% 18%, rgba(96,165,250,0.18) 0%, transparent 55%),
+      radial-gradient(ellipse at 82% 82%, rgba(37,99,235,0.12) 0%, transparent 55%),
+      #070d1a;
+  }
+  .title { font-weight: 900; letter-spacing: -0.5px; }
+  .subtitle { color: #94a3b8; }
+  .accent { color: #60a5fa; }
+  .accent-line { position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
+    background: linear-gradient(90deg, #2563eb, #60a5fa, #93c5fd); }
+  .card { background: #0c1322; border: 1px solid #1f2d47; border-radius: 10px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: rgba(74,222,128,0.15); color: #4ade80; }
+  .badge-yellow { background: rgba(251,191,36,0.15); color: #fbbf24; }
+  .badge-gray { background: rgba(148,163,184,0.15); color: #94a3b8; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .logo { border-radius: 22%; }
+  .brandline { display: flex; align-items: center; gap: 12px; }
+</style>
+</head>
+<body>
+<div style="width:1280px;height:800px;padding:40px;">
+  <div style="text-align:center;margin-bottom:30px;">
+    <div class="title" style="font-size:36px;">Scans every page on its own</div>
+    <div class="subtitle" style="font-size:18px;margin-top:8px;">The badge counts what it found. Click to see the list.</div>
+  </div>
+  <div style="background:#0c1322;border:1px solid #1f2d47;border-radius:12px;overflow:hidden;max-width:1000px;margin:0 auto;">
+    <div style="background:#101a2e;padding:12px 16px;display:flex;align-items:center;gap:8px;">
+      <div class="dot" style="background:#f87171;"></div>
+      <div class="dot" style="background:#fbbf24;"></div>
+      <div class="dot" style="background:#4ade80;"></div>
+      <div style="background:#1f2d47;border-radius:6px;padding:6px 16px;margin-left:16px;flex:1;max-width:400px;">
+        <span style="font-size:12px;color:#64748b;">example-company.com</span>
+      </div>
+      <div style="position:relative;margin-left:auto;">
+        <img class="logo" src="sula-icon.png" width="28" height="28" />
+        <div style="position:absolute;top:-4px;right:-4px;background:#60a5fa;color:#071022;font-size:9px;font-weight:800;padding:1px 4px;border-radius:8px;">4</div>
+      </div>
+    </div>
+    <div style="display:flex;min-height:430px;">
+      <div style="flex:1;padding:30px;">
+        <div style="width:60%;height:12px;background:#101a2e;border-radius:4px;margin-bottom:12px;"></div>
+        <div style="width:80%;height:12px;background:#101a2e;border-radius:4px;margin-bottom:12px;"></div>
+        <div style="width:45%;height:12px;background:#101a2e;border-radius:4px;margin-bottom:24px;"></div>
+        <div style="width:70%;height:12px;background:#101a2e;border-radius:4px;margin-bottom:12px;"></div>
+        <div style="width:55%;height:12px;background:#101a2e;border-radius:4px;"></div>
+      </div>
+      <div style="width:300px;background:#070d1a;border-left:1px solid #1f2d47;">
+        <div style="background:#0c1322;border-bottom:1px solid #1f2d47;padding:12px 14px;display:flex;align-items:center;gap:8px;">
+          <img class="logo" src="sula-icon.png" width="18" height="18" />
+          <span style="font-weight:700;font-size:13px;">Sula</span>
+        </div>
+        <div style="padding:8px 12px;display:flex;align-items:center;gap:6px;font-size:11px;color:#94a3b8;">
+          <div class="dot" style="background:#4ade80;width:7px;height:7px;"></div> Found 4 contacts on this page
+        </div>
+        <div style="padding:4px 12px;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:1px;font-weight:600;">Email</div>
+        <div style="margin:4px 12px;padding:10px;background:#0c1322;border:1px solid #1f2d47;border-radius:6px;border-left:3px solid #60a5fa;">
+          <div style="font-size:13px;font-weight:600;">support@example.com</div>
+          <div style="font-size:10px;color:#64748b;margin-top:3px;display:flex;justify-content:space-between;"><span>Click to copy</span><span class="badge badge-green" style="font-size:9px;">Likely support</span></div>
+        </div>
+        <div style="margin:4px 12px;padding:10px;background:#0c1322;border:1px solid #1f2d47;border-radius:6px;border-left:3px solid #60a5fa;">
+          <div style="font-size:13px;font-weight:600;">help@example.com</div>
+          <div style="font-size:10px;color:#64748b;margin-top:3px;display:flex;justify-content:space-between;"><span>Click to copy</span><span class="badge badge-green" style="font-size:9px;">Likely support</span></div>
+        </div>
+        <div style="padding:4px 12px;margin-top:8px;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:1px;font-weight:600;">Phone</div>
+        <div style="margin:4px 12px;padding:10px;background:#0c1322;border:1px solid #1f2d47;border-radius:6px;border-left:3px solid #60a5fa;">
+          <div style="font-size:13px;font-weight:600;">1-800-555-0199</div>
+          <div style="font-size:10px;color:#64748b;margin-top:3px;">Click to copy</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="accent-line"></div>
+</body>
+</html>

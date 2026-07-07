@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
-  html, body { width: 1400px; height: 560px; }
+  html, body { width: 1280px; height: 800px; }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -32,32 +32,25 @@
 </style>
 </head>
 <body>
-<div style="width:1400px;height:560px;display:flex;align-items:center;padding:0 90px;">
-  <div style="flex:1;max-width:640px;">
-    <div class="brandline" style="margin-bottom:20px;">
-      <img class="logo" src="sula-icon.png" width="56" height="56" />
-      <span style="font-size:15px;font-weight:800;letter-spacing:4px;text-transform:uppercase;color:#60a5fa;">Sula</span>
-    </div>
-    <div class="title" style="font-size:64px;line-height:1.05;">Find people,<br><span class="accent">quickly.</span></div>
-    <div class="subtitle" style="font-size:20px;margin-top:18px;max-width:520px;line-height:1.5;">The emails and phone numbers already on the page, ranked and one click away. No account. Nothing leaves your browser.</div>
-    <div style="display:flex;gap:18px;margin-top:26px;">
-      <div style="display:flex;align-items:center;gap:6px;"><div class="dot" style="background:#60a5fa;"></div><span style="font-size:13px;color:#94a3b8;">Scans on its own</span></div>
-      <div style="display:flex;align-items:center;gap:6px;"><div class="dot" style="background:#4ade80;"></div><span style="font-size:13px;color:#94a3b8;">Ranked results</span></div>
-      <div style="display:flex;align-items:center;gap:6px;"><div class="dot" style="background:#fbbf24;"></div><span style="font-size:13px;color:#94a3b8;">Click to copy</span></div>
-    </div>
-  </div>
-  <div style="display:flex;flex-direction:column;gap:14px;width:440px;margin-left:auto;">
+<div style="width:1280px;height:800px;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+  <div class="title" style="font-size:40px;margin-bottom:8px;">Ranked, so you don't guess</div>
+  <div class="subtitle" style="font-size:18px;margin-bottom:40px;">The best contact floats to the top. Dead ends sink.</div>
+  <div style="display:flex;flex-direction:column;gap:12px;width:520px;">
     <div class="card" style="padding:16px 20px;display:flex;align-items:center;justify-content:space-between;border-left:3px solid #60a5fa;">
-      <div><div style="font-size:16px;font-weight:700;">support@company.com</div><div style="font-size:12px;color:#64748b;margin-top:2px;">Click to copy</div></div>
+      <div><div style="font-size:16px;font-weight:700;">support@acme.com</div><div style="font-size:12px;color:#64748b;margin-top:2px;">Found in a mailto: link in the footer</div></div>
       <span class="badge badge-green">Likely support</span>
     </div>
     <div class="card" style="padding:16px 20px;display:flex;align-items:center;justify-content:space-between;border-left:3px solid #60a5fa;">
-      <div><div style="font-size:16px;font-weight:700;">1-800-555-HELP</div><div style="font-size:12px;color:#64748b;margin-top:2px;">Click to copy</div></div>
+      <div><div style="font-size:16px;font-weight:700;">1-888-ACME-HELP</div><div style="font-size:12px;color:#64748b;margin-top:2px;">Found next to &quot;Customer Service&quot;</div></div>
       <span class="badge badge-green">Likely support</span>
     </div>
     <div class="card" style="padding:16px 20px;display:flex;align-items:center;justify-content:space-between;border-left:3px solid #fbbf24;">
-      <div><div style="font-size:16px;font-weight:700;">info@company.com</div><div style="font-size:12px;color:#64748b;margin-top:2px;">Click to copy</div></div>
+      <div><div style="font-size:16px;font-weight:700;">info@acme.com</div><div style="font-size:12px;color:#64748b;margin-top:2px;">General inbox, may route to support</div></div>
       <span class="badge badge-yellow">Possible</span>
+    </div>
+    <div class="card" style="padding:16px 20px;display:flex;align-items:center;justify-content:space-between;border-left:3px solid #64748b;">
+      <div><div style="font-size:16px;font-weight:700;">careers@acme.com</div><div style="font-size:12px;color:#64748b;margin-top:2px;">Not customer service</div></div>
+      <span class="badge badge-gray">Low match</span>
     </div>
   </div>
 </div>
