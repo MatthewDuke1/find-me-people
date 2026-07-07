@@ -331,19 +331,19 @@ function confidenceLabel(score) {
 // Instead we flag the quality signals readable from the address ITSELF, so the
 // user can triage before they reach out: a direct work address > a personal
 // free-mail > a role inbox (info@, lower response) > a disposable/junk domain.
-const FMP_FREE_MAIL = new Set([
+const SULA_FREE_MAIL = new Set([
   "gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "hotmail.com",
   "hotmail.co.uk", "outlook.com", "live.com", "msn.com", "aol.com", "icloud.com",
   "me.com", "mac.com", "proton.me", "protonmail.com", "gmx.com", "zoho.com",
   "mail.com", "yandex.com", "yahoo.co.uk",
 ]);
-const FMP_DISPOSABLE = new Set([
+const SULA_DISPOSABLE = new Set([
   "mailinator.com", "guerrillamail.com", "10minutemail.com", "tempmail.com",
   "temp-mail.org", "throwawaymail.com", "yopmail.com", "getnada.com", "nada.email",
   "trashmail.com", "sharklasers.com", "dispostable.com", "maildrop.cc",
   "fakeinbox.com", "mintemail.com", "mohmal.com", "tempr.email", "discard.email",
 ]);
-const FMP_ROLE_LOCALPARTS = new Set([
+const SULA_ROLE_LOCALPARTS = new Set([
   "info", "support", "sales", "admin", "contact", "hello", "team", "help",
   "office", "billing", "accounts", "careers", "jobs", "hr", "press", "media",
   "marketing", "noreply", "no-reply", "donotreply", "do-not-reply", "webmaster",
@@ -356,17 +356,17 @@ function emailQuality(email) {
   const local = m[1];
   const domain = m[2];
   if (/\.\.|^\.|\.$/.test(local)) return { label: "Check format", tone: "warn" };
-  if (FMP_DISPOSABLE.has(domain)) return { label: "Disposable", tone: "bad" };
-  if (FMP_ROLE_LOCALPARTS.has(local.replace(/\+.*/, ""))) return { label: "Role inbox", tone: "warn" };
-  if (FMP_FREE_MAIL.has(domain)) return { label: "Personal", tone: "ok" };
+  if (SULA_DISPOSABLE.has(domain)) return { label: "Disposable", tone: "bad" };
+  if (SULA_ROLE_LOCALPARTS.has(local.replace(/\+.*/, ""))) return { label: "Role inbox", tone: "warn" };
+  if (SULA_FREE_MAIL.has(domain)) return { label: "Personal", tone: "ok" };
   return { label: "Direct", tone: "good" }; // named local-part @ a real domain
 }
 
 // ---- Provenance / freshness (counters the "stale data" complaint) ---------
-// FMP reads the LIVE page, so every contact is "found here, just now" — the
+// Sula reads the LIVE page, so every contact is "found here, just now" — the
 // structural opposite of a months-old database scrape. We surface WHERE on the
 // page each contact came from (its scan source) as a visible trust signal.
-const FMP_SOURCE_LABEL = {
+const SULA_SOURCE_LABEL = {
   mailto: "mailto link", "iframe-mailto": "mailto link",
   tel: "tel link", "iframe-tel": "tel link", sms: "sms link",
   address: "address tag", "json-ld": "structured data", microdata: "structured data",
@@ -379,7 +379,7 @@ const FMP_SOURCE_LABEL = {
 };
 function provenanceLabel(source) {
   const key = String(source || "").replace(/:$/, "");
-  return FMP_SOURCE_LABEL[key] || "this page";
+  return SULA_SOURCE_LABEL[key] || "this page";
 }
 
 // Build a flat contact list from a content-script scan response.

@@ -61,7 +61,7 @@ async function activateLicense(key) {
       `${LS_API}/activate`,
       _lsForm({
         license_key,
-        instance_name: `FMP ${(navigator.userAgent || "").slice(0, 40)}`,
+        instance_name: `Sula ${(navigator.userAgent || "").slice(0, 40)}`,
       })
     ).then((res) => res.json());
     if (r && r.activated) {
