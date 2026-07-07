@@ -194,6 +194,30 @@ marquee = ("""<div style="width:1400px;height:560px;display:flex;align-items:cen
   </div>
 </div>""")
 
+# The marquee design reflowed to the standard social-card size (og:image,
+# LinkedIn, Twitter). 1200x630 is 1.9:1 vs the marquee's 2.5:1, so the text
+# column gets more height and the card column narrows.
+social = ("""<div style="width:1200px;height:630px;display:flex;align-items:center;padding:0 70px;">
+  <div style="flex:1;max-width:560px;">
+    <div class="brandline" style="margin-bottom:22px;">
+      <img class="logo" src="sula-icon.png" width="56" height="56" />
+      <span style="font-size:15px;font-weight:800;letter-spacing:4px;text-transform:uppercase;color:#60a5fa;">Sula</span>
+    </div>
+    <div class="title" style="font-size:58px;line-height:1.06;">Find people,<br><span class="accent">quickly.</span></div>
+    <div class="subtitle" style="font-size:19px;margin-top:18px;max-width:470px;line-height:1.5;">The emails and phone numbers already on the page, ranked and one click away. No account. Nothing leaves your browser.</div>
+    <div style="display:flex;gap:16px;margin-top:26px;">
+      <div style="display:flex;align-items:center;gap:6px;"><div class="dot" style="background:#60a5fa;"></div><span style="font-size:13px;color:#94a3b8;">Scans on its own</span></div>
+      <div style="display:flex;align-items:center;gap:6px;"><div class="dot" style="background:#4ade80;"></div><span style="font-size:13px;color:#94a3b8;">Ranked results</span></div>
+      <div style="display:flex;align-items:center;gap:6px;"><div class="dot" style="background:#fbbf24;"></div><span style="font-size:13px;color:#94a3b8;">Click to copy</span></div>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:14px;width:390px;margin-left:auto;">
+""" + card("support@company.com", "Click to copy", "Likely support", "badge-green", "#60a5fa") + "\n"
+    + card("1-800-555-HELP", "Click to copy", "Likely support", "badge-green", "#60a5fa") + "\n"
+    + card("info@company.com", "Click to copy", "Possible", "badge-yellow", "#fbbf24") + """
+  </div>
+</div>""")
+
 files = {
     'shot1_hero.html': (1280, 800, shot1),
     'shot2_autoscan.html': (1280, 800, shot2),
@@ -202,6 +226,7 @@ files = {
     'shot5_support_pages.html': (1280, 800, shot5),
     'small_promo.html': (440, 280, small),
     'marquee_promo.html': (1400, 560, marquee),
+    'social_card.html': (1200, 630, social),
 }
 for name, (w, h, body) in files.items():
     io.open(name, 'w', encoding='utf-8').write(page(w, h, body))
