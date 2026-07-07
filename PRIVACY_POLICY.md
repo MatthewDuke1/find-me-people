@@ -7,7 +7,7 @@ Last updated: July 3, 2026 — applies to v2.0.0 and later.
 
 Sula scans pages locally to find contact information. There is no account, nothing identifies you, your browsing data never leaves your machine, and no remote code is loaded. The extension makes two kinds of anonymous network request, both narrow and described in full below.
 
-The same policy lives on the web at https://find-me-people.com/privacy.html.
+The same policy lives on the web at https://trysula.com/privacy.html.
 
 ## What the extension reads
 
@@ -85,7 +85,7 @@ The extension does not knowingly collect information from anyone, including chil
 
 ## Changes to this policy
 
-If this policy changes, the updated version is published in the GitHub repository and the "Last updated" date above is revised. The web copy at https://find-me-people.com/privacy.html is updated at the same time.
+If this policy changes, the updated version is published in the GitHub repository and the "Last updated" date above is revised. The web copy at https://trysula.com/privacy.html is updated at the same time.
 
 ## Contact
 

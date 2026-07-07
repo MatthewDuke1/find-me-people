@@ -128,8 +128,8 @@
 
   // Big-DOM thresholds: above these, scanPage takes the cheaper path. Normal
   // pages (well under these counts) keep the full-quality path unchanged.
-  const FMP_BIG_DOM_ELEMENTS = 9000;
-  const FMP_MAX_ANCHORS = 4000;
+  const SULA_BIG_DOM_ELEMENTS = 9000;
+  const SULA_MAX_ANCHORS = 4000;
 
   // Body text for scanning. innerText forces a layout REFLOW — the single
   // biggest per-scan cost on large pages. On very large DOMs fall back to
@@ -138,7 +138,7 @@
   function fmpBodyText() {
     if (!document.body) return "";
     try {
-      if (document.getElementsByTagName("*").length > FMP_BIG_DOM_ELEMENTS) {
+      if (document.getElementsByTagName("*").length > SULA_BIG_DOM_ELEMENTS) {
         return document.body.textContent || "";
       }
     } catch (_) {}
@@ -351,7 +351,7 @@
     // roots (mode: 'closed') stay opaque -- we can't get a reference --
     // but those are rare on the open web.
     //
-    // We carefully skip our OWN shadow root (the FMP side panel) so we
+    // We carefully skip our OWN shadow root (the Sula side panel) so we
     // don't recurse into our UI and find our own rendered chips/buttons.
     // Runs after the cleaner passes above so they win the dedup slot.
     scanShadowRoots(results, seen);
@@ -397,10 +397,10 @@
     scanSameOriginIframes(results, seen);
 
     // 4. Look for contact page links (capped on extreme pages — the cap only
-    // bites above FMP_MAX_ANCHORS, which normal pages never reach).
+    // bites above SULA_MAX_ANCHORS, which normal pages never reach).
     const _anchors = document.querySelectorAll("a");
-    const _anchorIter = _anchors.length > FMP_MAX_ANCHORS
-      ? Array.prototype.slice.call(_anchors, 0, FMP_MAX_ANCHORS)
+    const _anchorIter = _anchors.length > SULA_MAX_ANCHORS
+      ? Array.prototype.slice.call(_anchors, 0, SULA_MAX_ANCHORS)
       : _anchors;
     _anchorIter.forEach((a) => {
       const href = a.href || "";
@@ -547,8 +547,8 @@
         const _s = window.__fmpScanStats || (window.__fmpScanStats = { runs: 0, totalMs: 0, maxMs: 0 });
         _s.runs++; _s.totalMs += _ms; if (_ms > _s.maxMs) _s.maxMs = _ms;
         // Heap readout (Chrome only). This is the WHOLE renderer's JS heap (page
-        // + FMP share it), not FMP-isolated — so it's a leak gauge (does it
-        // climb across a session?), not an exact FMP figure. The Δ-since-load is
+        // + Sula share it), not Sula-isolated — so it's a leak gauge (does it
+        // climb across a session?), not an exact Sula figure. The Δ-since-load is
         // the useful signal: it should plateau, not grow unbounded.
         let _heap = "";
         if (performance.memory && performance.memory.usedJSHeapSize) {
@@ -558,7 +558,7 @@
         }
         if (window.localStorage && localStorage.getItem("fmp_perf") === "1") {
           console.debug(
-            `[FMP] scan ${window.__fmpLastScanMs}ms · ${results.emails.length}e/${results.phones.length}p · ` +
+            `[Sula] scan ${window.__fmpLastScanMs}ms · ${results.emails.length}e/${results.phones.length}p · ` +
             `run #${_s.runs}, avg ${Math.round(_s.totalMs / _s.runs)}ms, max ${Math.round(_s.maxMs)}ms${_heap}`
           );
         }
@@ -977,7 +977,7 @@
         const el = all[i];
         const sr = el.shadowRoot;
         if (!sr) continue;
-        // Skip our own UI -- the FMP panel and tab live in a shadow root
+        // Skip our own UI -- the Sula panel and tab live in a shadow root
         // whose host has id SP_HOST_ID. Recursing in finds our own
         // rendered chips, which would surface us inside ourselves.
         if (el.id === SP_HOST_ID) continue;
@@ -3293,9 +3293,9 @@
   //     chrome.storage.local's 5 MB quota.
   //   - Cache is local-only. Never transmitted, never synced.
   // ====================================================================
-  const FMP_CACHE_KEY = "fmp_scan_cache_v1";
-  const FMP_CACHE_TTL_MS = 60 * 60 * 1000;
-  const FMP_CACHE_MAX_ENTRIES = 50;
+  const SULA_CACHE_KEY = "fmp_scan_cache_v1";
+  const SULA_CACHE_TTL_MS = 60 * 60 * 1000;
+  const SULA_CACHE_MAX_ENTRIES = 50;
 
   function fmpCacheHostKey() {
     try {
@@ -3307,13 +3307,13 @@
     return new Promise((resolve) => {
       if (!chrome.storage || !chrome.storage.local) return resolve(null);
       try {
-        chrome.storage.local.get([FMP_CACHE_KEY], (r) => {
-          const map = (r && r[FMP_CACHE_KEY]) || {};
+        chrome.storage.local.get([SULA_CACHE_KEY], (r) => {
+          const map = (r && r[SULA_CACHE_KEY]) || {};
           const host = fmpCacheHostKey();
           if (!host || !map[host]) return resolve(null);
           const entry = map[host];
           if (!entry || typeof entry.savedAt !== "number") return resolve(null);
-          if (Date.now() - entry.savedAt > FMP_CACHE_TTL_MS) return resolve(null);
+          if (Date.now() - entry.savedAt > SULA_CACHE_TTL_MS) return resolve(null);
           resolve(entry.results || null);
         });
       } catch (_) {
@@ -3330,8 +3330,8 @@
     const total = (results.emails || []).length + (results.phones || []).length;
     if (total === 0) return;
     try {
-      chrome.storage.local.get([FMP_CACHE_KEY], (r) => {
-        const map = (r && r[FMP_CACHE_KEY]) || {};
+      chrome.storage.local.get([SULA_CACHE_KEY], (r) => {
+        const map = (r && r[SULA_CACHE_KEY]) || {};
         map[host] = {
           savedAt: Date.now(),
           results: {
@@ -3344,12 +3344,12 @@
         };
         // Evict oldest if over cap
         const keys = Object.keys(map);
-        if (keys.length > FMP_CACHE_MAX_ENTRIES) {
+        if (keys.length > SULA_CACHE_MAX_ENTRIES) {
           keys.sort((a, b) => (map[a].savedAt || 0) - (map[b].savedAt || 0));
-          const toDrop = keys.slice(0, keys.length - FMP_CACHE_MAX_ENTRIES);
+          const toDrop = keys.slice(0, keys.length - SULA_CACHE_MAX_ENTRIES);
           toDrop.forEach((k) => { delete map[k]; });
         }
-        chrome.storage.local.set({ [FMP_CACHE_KEY]: map });
+        chrome.storage.local.set({ [SULA_CACHE_KEY]: map });
       });
     } catch (_) {}
   }
