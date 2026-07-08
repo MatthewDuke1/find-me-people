@@ -17,7 +17,8 @@ $Assets = @(
   @{ In = "shot4_copy.html";          Out = "screenshot_4_copy_1280x800.png";          W = 1280; H = 800 },
   @{ In = "shot5_support_pages.html"; Out = "screenshot_5_support_pages_1280x800.png"; W = 1280; H = 800 },
   @{ In = "small_promo.html";         Out = "small_promo_440x280.png";                 W = 440;  H = 280 },
-  @{ In = "marquee_promo.html";       Out = "marquee_promo_1400x560.png";              W = 1400; H = 560 }
+  @{ In = "marquee_promo.html";       Out = "marquee_promo_1400x560.png";              W = 1400; H = 560 },
+  @{ In = "social_card.html";         Out = "social_card_1200x630.png";                W = 1200; H = 630 }
 )
 
 # Chrome's sandbox refuses to write into some directories; render to TEMP

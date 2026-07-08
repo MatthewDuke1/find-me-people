@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  html, body { width: 1200px; height: 630px; }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    color: #f8fafc; overflow: hidden; position: relative;
+    background:
+      radial-gradient(ellipse at 22% 18%, rgba(96,165,250,0.18) 0%, transparent 55%),
+      radial-gradient(ellipse at 82% 82%, rgba(37,99,235,0.12) 0%, transparent 55%),
+      #070d1a;
+  }
+  .title { font-weight: 900; letter-spacing: -0.5px; }
+  .subtitle { color: #94a3b8; }
+  .accent { color: #60a5fa; }
+  .accent-line { position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
+    background: linear-gradient(90deg, #2563eb, #60a5fa, #93c5fd); }
+  .card { background: #0c1322; border: 1px solid #1f2d47; border-radius: 10px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: rgba(74,222,128,0.15); color: #4ade80; }
+  .badge-yellow { background: rgba(251,191,36,0.15); color: #fbbf24; }
+  .badge-gray { background: rgba(148,163,184,0.15); color: #94a3b8; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .logo { border-radius: 22%; }
+  .brandline { display: flex; align-items: center; gap: 12px; }
+</style>
+</head>
+<body>
+<div style="width:1200px;height:630px;display:flex;align-items:center;padding:0 70px;">
+  <div style="flex:1;max-width:560px;">
+    <div class="brandline" style="margin-bottom:22px;">
+      <img class="logo" src="sula-icon.png" width="56" height="56" />
+      <span style="font-size:15px;font-weight:800;letter-spacing:4px;text-transform:uppercase;color:#60a5fa;">Sula</span>
+    </div>
+    <div class="title" style="font-size:58px;line-height:1.06;">Find people,<br><span class="accent">quickly.</span></div>
+    <div class="subtitle" style="font-size:19px;margin-top:18px;max-width:470px;line-height:1.5;">The emails and phone numbers already on the page, ranked and one click away. No account. Nothing leaves your browser.</div>
+    <div style="display:flex;gap:16px;margin-top:26px;">
+      <div style="display:flex;align-items:center;gap:6px;"><div class="dot" style="background:#60a5fa;"></div><span style="font-size:13px;color:#94a3b8;">Scans on its own</span></div>
+      <div style="display:flex;align-items:center;gap:6px;"><div class="dot" style="background:#4ade80;"></div><span style="font-size:13px;color:#94a3b8;">Ranked results</span></div>
+      <div style="display:flex;align-items:center;gap:6px;"><div class="dot" style="background:#fbbf24;"></div><span style="font-size:13px;color:#94a3b8;">Click to copy</span></div>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:14px;width:390px;margin-left:auto;">
+    <div class="card" style="padding:16px 20px;display:flex;align-items:center;justify-content:space-between;border-left:3px solid #60a5fa;">
+      <div><div style="font-size:16px;font-weight:700;">support@company.com</div><div style="font-size:12px;color:#64748b;margin-top:2px;">Click to copy</div></div>
+      <span class="badge badge-green">Likely support</span>
+    </div>
+    <div class="card" style="padding:16px 20px;display:flex;align-items:center;justify-content:space-between;border-left:3px solid #60a5fa;">
+      <div><div style="font-size:16px;font-weight:700;">1-800-555-HELP</div><div style="font-size:12px;color:#64748b;margin-top:2px;">Click to copy</div></div>
+      <span class="badge badge-green">Likely support</span>
+    </div>
+    <div class="card" style="padding:16px 20px;display:flex;align-items:center;justify-content:space-between;border-left:3px solid #fbbf24;">
+      <div><div style="font-size:16px;font-weight:700;">info@company.com</div><div style="font-size:12px;color:#64748b;margin-top:2px;">Click to copy</div></div>
+      <span class="badge badge-yellow">Possible</span>
+    </div>
+  </div>
+</div>
+<div class="accent-line"></div>
+</body>
+</html>
