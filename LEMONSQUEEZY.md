@@ -25,9 +25,12 @@ when the store is live.
 
 ## Go live — one-time setup
 1. **Create the store + product(s)** at lemonsqueezy.com:
-   - A subscription product (e.g. Pro Monthly $3, Pro Annual $24) and/or a
-     single-payment **Lifetime** ($49). On each, enable **"Generate license
-     keys"** (set an activation limit, e.g. 3 devices).
+   - Pricing (chosen to steer buyers toward Lifetime):
+     - **Monthly $6/mo** (base)
+     - **Annual $57.60/yr** — 20% off the $72 annualized base (round to ~$58 if you prefer a clean number)
+     - **Lifetime $80** (one-time; pays for itself vs annual in ~1.4 yrs — the intended nudge)
+   - On each variant, enable **"Generate license keys"** (set an activation
+     limit, e.g. 3 devices).
 2. **Grab the checkout URLs** for each variant and paste them into
    `CHECKOUT` in `license.js`. Point `DEFAULT_CHECKOUT` at the one the
    "Upgrade" button should open.
