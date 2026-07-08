@@ -585,14 +585,16 @@ async function sendToWebhook(url, contacts, hostname) {
 // globals from license.js (loaded before popup.js). With PRO_ENFORCED=false,
 // isPro() always resolves true, so these are no-ops until the store goes live.
 
-// Returns true if the user may export; otherwise nudges to upgrade.
-async function gateExport() {
+// Gate a Pro feature. Returns true if entitled; otherwise nudges to upgrade
+// with a message naming the specific feature. Guards Export, Draft outreach,
+// and Save to CRM (name kept gateExport for call-site history).
+async function gateProFeature(label) {
   try {
     if (await isPro()) return true;
   } catch (_) {
     return true; // never block on a licensing error
   }
-  showToast("Export is a Pro feature");
+  showToast((label || "That") + " is a Pro feature");
   if (typeof openUpgrade === "function") openUpgrade();
   return false;
 }
@@ -846,7 +848,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Export the full saved history as CSV / vCard.
       contentEl.querySelectorAll("[data-export-history]").forEach((btn) => {
         btn.addEventListener("click", async () => {
-          if (!(await gateExport())) return;
+          if (!(await gateProFeature("Export"))) return;
           const contacts = historyToContacts(hist);
           if (contacts.length === 0) { showToast("Nothing to export"); return; }
           const base = `sula-history-${todayStamp()}`;
@@ -1120,7 +1122,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     contentEl.querySelectorAll("[data-outreach]").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
-        if (!(await gateExport())) return;
+        if (!(await gateProFeature("Draft outreach"))) return;
         const to = btn.dataset.email;
         if (!to) return;
         const run = () => draftOutreach(to, btn.dataset.outreach, pageHost);
@@ -1171,7 +1173,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try { pageHost = new URL(tab.url).hostname.replace(/^www\./, ""); } catch (_) {}
     contentEl.querySelectorAll("[data-export]").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        if (!(await gateExport())) return;
+        if (!(await gateProFeature("Export"))) return;
         const contacts = normalizeScanContacts(window._lastScanResults || data, pageHost);
         if (contacts.length === 0) { showToast("Nothing to export"); return; }
         const base = `sula-contacts-${safeName(pageHost)}-${todayStamp()}`;
@@ -1205,7 +1207,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       };
 
       webhookBtn.addEventListener("click", async () => {
-        if (!(await gateExport())) return;
+        if (!(await gateProFeature("Save to CRM"))) return;
         if (collectContacts().length === 0) { showToast("Nothing to send"); return; }
         const saved = await getWebhookUrl();
         if (isValidWebhookUrl(saved)) {

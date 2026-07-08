@@ -35,7 +35,7 @@ when the store is live.
    `CHECKOUT` in `license.js`. Point `DEFAULT_CHECKOUT` at the one the
    "Upgrade" button should open.
 3. **Flip the switch:** set `PRO_ENFORCED = true` in `license.js`.
-4. Rebuild + publish (`./build.ps1` → upload `dist/find-me-people-chrome.zip`).
+4. Rebuild + publish (`./build.ps1` → upload `dist/sula-chrome.zip`).
 
 That's it — no server. After this:
 - Export is **Pro-gated**: free users get an "Export is a Pro feature" nudge +
@@ -59,6 +59,6 @@ secret is never shipped** in the extension.
 ## Don't forget
 - `license.js` must stay in the build file list (`build.sh` / `build.ps1`) or
   it won't be in the store zip.
-- Currently the only Pro-gated feature is **CSV/vCard export**. To gate more,
+- Pro-gated features today: **CSV/vCard export** (page + history), **Draft outreach**, and **Save to CRM** (webhook) — all via `gateProFeature(label)`. To gate more,
   wrap the action with `if (!(await gateExport())) return;` (or a similar
   `isPro()` check).
