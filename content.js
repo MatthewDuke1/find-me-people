@@ -5,6 +5,35 @@
   "use strict";
 
   const EMAIL_REGEX = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+  // ---- Network transparency ledger -------------------------------------
+  // Sula's whole claim is that nothing leaves your browser. This records every
+  // request the scanner actually makes so the popup can show the count -- and
+  // name them when it isn't zero. Truthfulness matters more than a pretty 0:
+  // if we fetched a contact page, we say so. Pro actions (CRM webhook) and
+  // license checks are user-initiated and live outside this ledger.
+  const sulaNetLog = [];
+  function sulaNetKind(url) {
+    const u = String(url);
+    if (u.includes("zendesk.com")) return "Zendesk help center";
+    if (u.includes("freshdesk.com")) return "Freshdesk help center";
+    if (u.includes("crisp.chat")) return "Crisp help center";
+    if (u.includes("sitemap")) return "sitemap on this site";
+    try {
+      if (new URL(u, location.href).origin === location.origin) {
+        return "contact page on this site";
+      }
+    } catch (_) {}
+    return "help center";
+  }
+  function sulaLogNet(url) {
+    try {
+      const clean = String(url).split("?")[0];
+      if (!sulaNetLog.some((e) => e.url === clean)) {
+        sulaNetLog.push({ url: clean, kind: sulaNetKind(url) });
+      }
+    } catch (_) {}
+  }
+
   const PHONE_REGEX = /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
   const INTL_PHONE_REGEX = /\+\d{1,3}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{2,4}[-.\s]?\d{2,4}[-.\s]?\d{0,4}/g;
 
@@ -2113,6 +2142,7 @@
     let xml = null;
     for (const url of candidates) {
       try {
+        sulaLogNet(url);
         const resp = await fetch(url, {
           credentials: "same-origin",
           redirect: "follow",
@@ -2235,6 +2265,7 @@
     let added = 0;
     for (const url of targets) {
       try {
+        sulaLogNet(url);
         const resp = await fetch(url, {
           credentials: "same-origin",
           redirect: "follow",
@@ -2333,6 +2364,7 @@
     for (const path of targets) {
       try {
         const url = origin + path;
+        sulaLogNet(url);
         const resp = await fetch(url, {
           credentials: "same-origin",
           redirect: "follow",
@@ -2542,7 +2574,8 @@
     const url = "https://" + subdomain + ".zendesk.com/api/v2/help_center/articles/search.json?per_page=10&query=contact";
     let json;
     try {
-      const resp = await fetch(url, {
+      sulaLogNet(url);
+        const resp = await fetch(url, {
         credentials: "omit",
         redirect: "follow",
         cache: "no-cache",
@@ -2745,6 +2778,7 @@
     let text = null;
     for (const url of candidates) {
       try {
+        sulaLogNet(url);
         const resp = await fetch(url, {
           credentials: "same-origin",
           redirect: "follow",
@@ -2813,6 +2847,7 @@
     let text = null;
     for (const url of candidates) {
       try {
+        sulaLogNet(url);
         const resp = await fetch(url, {
           credentials: "same-origin",
           redirect: "follow",
@@ -3433,7 +3468,7 @@
   // Listen for popup requests
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.action === "getContacts") {
-      sendResponse(results);
+      sendResponse(Object.assign({}, results, { netLog: sulaNetLog.slice() }));
     }
     return true;
   });
