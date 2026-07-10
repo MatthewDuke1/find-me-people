@@ -872,9 +872,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
       // Wire click-to-recopy on each history entry
       contentEl.querySelectorAll("[data-copy]").forEach((el) => {
-        el.addEventListener("click", () => {
+        el.addEventListener("click", async () => {
           const value = el.dataset.copy;
-          copyToClipboard(value);
+          if (!(await copyToClipboard(value))) return;
           const type = el.dataset.copyType || "unknown";
           const score = parseInt(el.dataset.copyScore || "0", 10) || 0;
           let host = "";
@@ -1112,9 +1112,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     let hostname = "";
     try { hostname = new URL(tab.url).hostname.replace(/^www\./, ""); } catch (_) {}
     contentEl.querySelectorAll("[data-copy]").forEach((el) => {
-      el.addEventListener("click", () => {
+      el.addEventListener("click", async () => {
         const value = el.dataset.copy;
-        copyToClipboard(value);
+        if (!(await copyToClipboard(value))) return;
         const type = el.dataset.copyType || "unknown";
         const score = parseInt(el.dataset.copyScore || "0", 10) || 0;
         if (type === "email" || type === "phone") {
@@ -1298,10 +1298,38 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 });
 
-function copyToClipboard(text) {
-  navigator.clipboard.writeText(text);
-  incrementCopyCount();
-  showToast("Copied to clipboard");
+// Same defect as the side panel had: writeText returns a promise, and firing
+// it without awaiting meant a rejection showed a success toast anyway. Await
+// it, fall back to execCommand, and only count/announce a real copy.
+async function copyToClipboard(text) {
+  if (typeof text !== "string" || text.length === 0) return false;
+  let ok = false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    }
+  } catch (_) {}
+  if (!ok) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0;";
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      ok = !!document.execCommand("copy");
+      ta.remove();
+    } catch (_) {}
+  }
+  if (ok) {
+    incrementCopyCount();
+    showToast("Copied to clipboard");
+  } else {
+    showToast("Couldn't copy - select and press Ctrl+C");
+  }
+  return ok;
 }
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

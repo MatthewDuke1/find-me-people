@@ -4690,6 +4690,7 @@
     }
     .text-btn:hover { color: #60a5fa; text-decoration-color: #60a5fa; }
     .footer-sep { color: #27272a; }
+    .copied-toast.failed { background: #7f1d1d; color: #fecaca; }
     .copied-toast {
       position: absolute;
       bottom: 14px;
@@ -4861,15 +4862,20 @@
     });
 
     shadow.querySelectorAll("[data-sp-copy]").forEach((el) => {
-      el.addEventListener("click", () => {
+      el.addEventListener("click", async () => {
         const value = el.getAttribute("data-sp-copy");
         if (!value) return;
-        try { navigator.clipboard.writeText(value); } catch (_) {}
+        const ok = await spCopy(value);
         const toast = shadow.querySelector(".copied-toast");
         if (toast) {
+          // Never claim success we did not have -- a lying toast is how a
+          // stale clipboard gets pasted into a real email.
+          toast.textContent = ok ? "Copied to clipboard" : "Couldn't copy -- select and press Ctrl+C";
+          toast.classList.toggle("failed", !ok);
           toast.classList.add("show");
-          setTimeout(() => toast.classList.remove("show"), 1200);
+          setTimeout(() => toast.classList.remove("show"), ok ? 1200 : 2600);
         }
+        if (!ok) return; // no copy, no history entry
         // Record into shared history (chrome.storage.local.fmp_history)
         // so the History tab picks it up. Same key + entry shape the
         // popup-side history uses.
@@ -5020,6 +5026,44 @@
         }
       });
     });
+  }
+
+  // Copy a value to the clipboard, honestly.
+  //
+  // navigator.clipboard.writeText returns a PROMISE. The old code called it
+  // inside a try/catch and showed "Copied to clipboard" unconditionally, so a
+  // rejected promise (Chrome refuses the async clipboard when the document
+  // isn't focused -- routine for a panel injected into someone else's page)
+  // failed silently while the toast claimed success. The user then pasted
+  // whatever was in the clipboard beforehand.
+  //
+  // Now: await the write, fall back to a hidden textarea + execCommand, and
+  // report what actually happened. Returns true only if the value really landed.
+  async function spCopy(value) {
+    if (typeof value !== "string" || value.length === 0) return false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(value);
+        return true;
+      }
+    } catch (_) {
+      // fall through to the legacy path
+    }
+    // Legacy fallback: works without document focus and on older engines.
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = value;
+      ta.setAttribute("readonly", "");
+      ta.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0;";
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, value.length); // iOS/Safari need the explicit range
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return !!ok;
+    } catch (_) {
+      return false;
+    }
   }
 
   async function ensureSidePanel(currentResults) {
