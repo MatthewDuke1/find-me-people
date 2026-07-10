@@ -1020,24 +1020,18 @@
         }
       });
 
-      // Free text of the shadow root -- run decodeObfuscatedText, then
-      // EMAIL_REGEX. Short-circuit if there's no shadow body or it has
-      // no text at all (common for purely structural components).
+      // Free text of the shadow root. Runs the full extractor (emails AND
+      // phones) instead of a hand-rolled email-only pass -- a support number
+      // printed as plain text inside a Web Component was silently missed
+      // before this. Same guards as the main-DOM loose-body scan: obfuscation
+      // decode, noise filters, and the phone contact-proximity anchor so a
+      // widget's tracking IDs don't surface as phone numbers. Short-circuit
+      // when the root has no meaningful text (purely structural components).
       const text = sr.textContent || "";
       if (!text || text.length < 4) return;
-      const decoded = decodeObfuscatedText(text);
-      const emailMatches = decoded.match(EMAIL_REGEX) || [];
-      emailMatches.forEach((email) => {
-        email = trimDigitPrefixBleed(email.toLowerCase());
-        if (seen.has(email)) return;
-        seen.add(email);
-        const context = "in shadow DOM";
-        results.emails.push({
-          value: email,
-          context,
-          score: Math.max(40, scoreEmail(email, context) - 10),
-          source: "shadow",
-        });
+      extractFromText(text, sr.host, results, seen, {
+        requireProximityAnchor: true,
+        source: "shadow",
       });
     });
   }
@@ -2927,7 +2921,7 @@
         seen.add(email);
         const context = parentEl ? getContext(parentEl) : "";
         const score = scoreEmail(email, context);
-        results.emails.push({ value: email, context, score, source: "text" });
+        results.emails.push({ value: email, context, score, source: opts.source || "text" });
       }
     });
 
@@ -2951,7 +2945,7 @@
           value: formatPhone(phone),
           context,
           score,
-          source: "text",
+          source: opts.source || "text",
         });
       }
     });
