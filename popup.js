@@ -606,6 +606,16 @@ async function renderProFooter() {
   if (!el || typeof PRO_ENFORCED === "undefined" || !PRO_ENFORCED) return;
   let pro = false;
   try { pro = await isPro(); } catch (_) {}
+  // Grandfathered users hold no license key, so offering "Deactivate" would
+  // be nonsense. Show them what they are instead.
+  let early = false;
+  try { early = (typeof isEarlySupporter === "function") && (await isEarlySupporter()); } catch (_) {}
+  if (pro && early) {
+    el.innerHTML =
+      '<div class="pro-row"><span class="pro-label"><span class="bolt">&#9889;</span> Sula <span class="pro-pill on">PRO</span></span>' +
+      '<span class="pro-early">Early supporter</span></div>';
+    return;
+  }
   if (pro) {
     el.innerHTML =
       '<div class="pro-row"><span class="pro-label"><span class="bolt">&#9889;</span> Sula <span class="pro-pill on">PRO</span></span>' +

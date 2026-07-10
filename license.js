@@ -16,6 +16,8 @@
 
 const LS_API = "https://api.lemonsqueezy.com/v1/licenses";
 const LIC_STORE_KEY = "fmp_license"; // chrome.storage.local
+// Set by background.js for anyone who installed before Pro cost anything.
+const EARLY_KEY = "sula_early_supporter";
 const PRO_ENFORCED = false; // <-- flip to true when the LemonSqueezy store is live
 const VALIDATE_EVERY_MS = 24 * 60 * 60 * 1000; // re-check at most daily
 
@@ -88,8 +90,13 @@ async function activateLicense(key) {
 // flag for VALIDATE_EVERY_MS, then re-validates against LemonSqueezy (which
 // reflects subscription lapse / refund). Network failure never locks out a
 // paying user.
+async function isEarlySupporter() {
+  return !!(await _lcGet(EARLY_KEY));
+}
+
 async function isPro() {
   if (!PRO_ENFORCED) return true; // store not live yet — everyone is Pro
+  if (await isEarlySupporter()) return true; // grandfathered, no license needed
   const lic = await _lcGet(LIC_STORE_KEY);
   if (!lic || !lic.pro) return false;
   if (Date.now() - (lic.checked || 0) < VALIDATE_EVERY_MS) return true;

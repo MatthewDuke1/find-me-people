@@ -23,6 +23,22 @@ license API (no backend, no API secret shipped).
 So the rails are in place and **nothing is user-visible yet**. Flip the flag
 when the store is live.
 
+## Grandfathering (early supporters)
+Everyone who installed Sula before Pro cost anything keeps Pro for good, with
+no license key. `background.js` writes a `sula_early_supporter` flag on any
+install/update of a build older than `PRICING_VERSION`, and on an update that
+jumps straight into the pricing build from an older one. `isPro()` honors the
+flag before it looks for a license, and the popup footer shows them
+"Early supporter" instead of a Deactivate button.
+
+⚠️ **`PRICING_VERSION` in `background.js` must equal the manifest version of
+the build that flips `PRO_ENFORCED = true`.** If they disagree, either new
+users get Pro free or early supporters lose it. It is currently `2.1.0`.
+
+Caveat: the flag lives in `chrome.storage.local`, so it does not follow a user
+to a second machine. Fine for a goodwill grant; if someone emails about it,
+hand them a free license key.
+
 ## Go live — one-time setup
 1. **Create the store + product(s)** at lemonsqueezy.com:
    - Pricing (chosen to steer buyers toward Lifetime):
