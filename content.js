@@ -4137,48 +4137,125 @@
   // by the confidence-explanation expansion (info button on each row).
   // Single sentence per source category, explains both what we did to
   // find it and why that signal should be trusted (or not).
+  // ---- Info panel: plain-language display helpers -----------------------
+  // getContext() walks up 3 ancestors and grabs their whole textContent,
+  // because scoreEmail()/scorePhone() need those surrounding words. Great for
+  // scoring, unreadable for humans: on a real footer it returns "Home About
+  // Products Pricing Contact ... support@acme.com ... Cookie Settings 2026".
+  // These helpers condense it for display without touching the scoring input.
+
+  // Sources whose "context" is machine data (JSON, script bodies, attribute
+  // payloads), never prose. Showing it teaches a non-technical user nothing
+  // and looks like a bug. The plain-English "Where we found it" line carries
+  // the meaning instead.
+  const SP_CODEY_SOURCES = new Set([
+    "inline-script", "globals", "json-ld", "form-value",
+    "data-attr", "cf", "meta", "site-override",
+    "appstore:apple", "appstore:play",
+  ]);
+
+  function spLooksLikeCode(t) {
+    if (/[{}]|":\s|=>|function\s*\(|\[object|;\s*var\s/.test(t)) return true;
+    // A single unbroken token this long is a minified identifier or a hash.
+    return /\S{34,}/.test(t);
+  }
+
+  // Trim to word boundaries so we never cut a word in half.
+  function spTrimToWords(t, fromStart, fromEnd) {
+    if (fromStart) {
+      const i = t.indexOf(" ");
+      if (i > 0 && i < 15) t = t.slice(i + 1);
+    }
+    if (fromEnd) {
+      const i = t.lastIndexOf(" ");
+      if (i > t.length - 15 && i > 0) t = t.slice(0, i);
+    }
+    return t.trim();
+  }
+
+  // Returns escaped HTML (the value bolded inside its sentence), or "" to
+  // hide the section entirely.
+  function spContextSnippet(item) {
+    const src = String((item && item.source) || "").toLowerCase();
+    if (SP_CODEY_SOURCES.has(src) || src.indexOf("chatbot:") === 0) return "";
+    const ctx = String((item && item.context) || "").replace(/\s+/g, " ").trim();
+    if (!ctx || ctx.length < 12) return "";
+    if (spLooksLikeCode(ctx)) return "";
+
+    const val = String((item && item.value) || "");
+    const at = val ? ctx.toLowerCase().indexOf(val.toLowerCase()) : -1;
+
+    if (at === -1) {
+      // Value isn't in the blob (phones get reformatted for display). Show a
+      // short lead-in rather than the whole footer.
+      let head = ctx.slice(0, 90);
+      head = spTrimToWords(head, false, ctx.length > 90);
+      if (!head || head.length < 12) return "";
+      return spEscape(head) + (ctx.length > 90 ? "&hellip;" : "");
+    }
+
+    const PAD = 42;
+    let start = Math.max(0, at - PAD);
+    let end = Math.min(ctx.length, at + val.length + PAD);
+    let before = ctx.slice(start, at);
+    let after = ctx.slice(at + val.length, end);
+    before = spTrimToWords(before, start > 0, false);
+    after = spTrimToWords(after, false, end < ctx.length);
+
+    // Nothing meaningful around it -- the value alone is already on screen.
+    if (before.length + after.length < 6) return "";
+
+    return (
+      (start > 0 ? "&hellip;" : "") +
+      spEscape(before) + (before ? " " : "") +
+      "<strong>" + spEscape(ctx.slice(at, at + val.length)) + "</strong>" +
+      (after ? " " : "") + spEscape(after) +
+      (end < ctx.length ? "&hellip;" : "")
+    );
+  }
+
   function spProvenanceDescription(item) {
     if (!item) return "";
     const src = String(item.source || "").toLowerCase();
-    if (src === "mailto") return "Direct mailto: link in the page HTML -- the highest-confidence signal there is. Someone explicitly authored it as a contact channel.";
-    if (src === "tel") return "Direct tel: link in the page HTML. Same confidence as mailto -- explicitly authored as a contact channel.";
-    if (src === "meta") return "Page meta tag (Open Graph, Facebook business properties, or IndieWeb rel=me). Author-declared metadata; high trust.";
-    if (src === "press") return "Press release / media-contact block. Companies specifically declare PR contacts in these blocks; high trust.";
-    if (src === "footer") return "Footer with a labeled field (\"Toll Free:\", \"Sales:\", etc.). Footer contact info is conventionally canonical.";
-    if (src === "site-override") return "Curated entry in the extension's known-contact registry. Verified by the maintainer with a 'last verified' date stamp.";
-    if (src === "globals") return "Page hydration state -- JSON-LD, schema.org, or framework state objects like __NEXT_DATA__. Author-declared structured data.";
+    if (src === "mailto") return "The site published this as a clickable email link. That is the strongest signal there is -- someone put it there on purpose.";
+    if (src === "tel") return "The site published this as a clickable phone link, put there on purpose as a way to reach them.";
+    if (src === "meta") return "Declared in the information the site publishes about itself for other services to read. High trust.";
+    if (src === "press") return "From a press or media-contact block. Companies list these deliberately for people to use.";
+    if (src === "footer") return "From a labelled field in the page footer, like \"Toll Free:\" or \"Sales:\". Footer contact info is usually the official one.";
+    if (src === "site-override") return "From Sula's own short list of hard-to-find contacts, checked by hand and date-stamped.";
+    if (src === "globals") return "From the data the page loaded before it drew itself. The site declared this contact; it just never displays it.";
     if (src.indexOf("chatbot:") === 0) {
       const vendor = src.slice("chatbot:".length);
-      return "Found in the page's " + vendor + " chatbot widget config. The vendor's SDK exposed it on the page state.";
+      return "From the " + vendor + " chatbot's own settings on this page. The bot was configured with this contact.";
     }
-    if (src === "appstore:apple") return "Apple App Store developer-contact section. Store policy requires developers to publish a working contact email.";
-    if (src === "appstore:play") return "Google Play Store developer-contact section. Store policy requires developers to publish a working contact email.";
-    if (src.indexOf("zendesk-kb:") === 0) return "Inside a Zendesk Help Center article. The company curated this article as public support documentation.";
-    if (src.indexOf("freshdesk-kb:") === 0) return "Inside a Freshdesk solutions / knowledge-base article. Curated public support documentation.";
-    if (src.indexOf("crisp-kb:") === 0) return "Inside a Crisp Helpdesk article. Curated public support documentation.";
-    if (src === "fetch" || src === "discovered-page") return "Found by background-fetching a contact-page link the in-page scan discovered (/contact, /support, /media-contacts, etc.).";
-    if (src === "iframe-mailto" || src === "iframe-tel") return "Found inside a same-origin embedded iframe (e.g. an embedded support widget).";
-    if (src === "data-attr" || src === "cf") return "Decoded from an obfuscated attribute (e.g. Cloudflare's data-cfemail anti-scraping encoding).";
-    if (src === "sitemap") return "URL discovered via the site's /sitemap.xml. The site explicitly published this contact page; we fetched it directly.";
-    if (src === "text") return "Free-text scan of the page body. Lower trust than direct mailto: / tel: links because context matters.";
-    if (src === "inline-script") return "Found in the text body of an inline <script> tag (page hydration state, config object, or string literal). Often the most reliable source on JS-heavy SPAs where the DOM is empty until JS runs.";
-    if (src === "json-ld") return "Schema.org JSON-LD structured data. The site author declared this as a spec-defined contact point in machine-readable form -- the highest-confidence signal short of a direct mailto: / tel: link.";
-    if (src === "sms") return "Direct sms: link in the page HTML. Same trust as a tel: link -- explicitly authored as a contact channel.";
-    if (src === "address") return "Found inside an HTML <address> tag, the spec-defined container for contact info. The author specifically marked this block as canonical contact info -- a strong signal.";
-    if (src === "noscript") return "Found inside a <noscript> fallback block. Sites commonly duplicate their canonical contact info there so JS-disabled clients (and SEO crawlers) can read it -- high signal-to-noise.";
-    if (src === "form-value") return "Found in the value attribute of a form input (often a hidden field carrying the configured reply-to or contact address). Higher trust than free-text scans because the value was explicitly set in the HTML, not inferred from prose.";
-    if (src === "shadow") return "Found inside an open Shadow DOM root attached to a Web Component on the page. Cleaner sources outrank this when both are present.";
+    if (src === "appstore:apple") return "From the App Store developer-contact section. Apple requires a working contact email there.";
+    if (src === "appstore:play") return "From the Google Play developer-contact section. Google requires a working contact email there.";
+    if (src.indexOf("zendesk-kb:") === 0) return "Inside a help-center article the company wrote and published for its customers.";
+    if (src.indexOf("freshdesk-kb:") === 0) return "Inside a help-center article the company wrote and published for its customers.";
+    if (src.indexOf("crisp-kb:") === 0) return "Inside a help-center article the company wrote and published for its customers.";
+    if (src === "fetch" || src === "discovered-page") return "This page had no contacts, so Sula opened the site own contact page and read it.";
+    if (src === "iframe-mailto" || src === "iframe-tel") return "Inside a section embedded from this same site, such as a support widget.";
+    if (src === "data-attr" || src === "cf") return "The site scrambled this address to hide it from scrapers. Sula unscrambled it.";
+    if (src === "sitemap") return "The site own sitemap listed a contact page, so Sula opened it and read it.";
+    if (src === "text") return "Read from the visible text of the page. Weaker than a clickable link, because the surrounding words decide what it means.";
+    if (src === "inline-script") return "From the page code, where sites keep their data before displaying it. Often the only place a contact appears on a modern site.";
+    if (src === "json-ld") return "From the structured data the site publishes for search engines. The site declared this as its contact point, so trust is very high.";
+    if (src === "sms") return "The site published this as a clickable text-message link, put there on purpose.";
+    if (src === "address") return "Inside the page address block, the section reserved for contact details. The site marked it as official, which is a strong signal.";
+    if (src === "noscript") return "From the fallback text shown when JavaScript is off. Sites usually put their real contact details there.";
+    if (src === "form-value") return "From a hidden field in a contact form, holding the address the form sends to. The site set this deliberately.";
+    if (src === "shadow") return "Inside a self-contained component on the page. When a cleaner source exists, that one wins.";
     return "Surfaced during the page scan; specific provenance not recorded.";
   }
 
   // Short explanation of what a numeric score means in plain English.
   function spScoreInterpretation(score) {
     const s = Number(score) || 0;
-    if (s >= 100) return "Verified mailto/tel link -- as high confidence as we have.";
+    if (s >= 100) return "A clickable email or phone link the site published. As confident as we get.";
     if (s >= 90)  return "Highly likely to be a real support contact.";
     if (s >= 70)  return "Likely support contact, in a contact-related context.";
-    if (s >= 40)  return "Possible match; not strongly contextualized as support.";
-    return "Low-confidence match; verify manually before relying on it.";
+    if (s >= 40)  return "Possible match. The words around it do not clearly mark it as support.";
+    return "Low confidence. Worth checking before you rely on it.";
   }
 
   function spBuildBody(currentResults, currentClient, history) {
@@ -4234,7 +4311,7 @@
           const tipText = spEscape(e.context || prov);
           const provDesc = spEscape(spProvenanceDescription(e));
           const scoreInterp = spEscape(spScoreInterpretation(e.score));
-          const ctxFull = spEscape(e.context || "");
+          const ctxFull = spContextSnippet(e);
           const infoId = `email-info-${idx}`;
           html += `
             <div class="row">
@@ -4250,7 +4327,7 @@
               <div class="info-panel" data-sp-info-panel="${infoId}">
                 <div class="info-label">Where we found it</div>
                 <div class="info-value">${provDesc}</div>
-                ${ctxFull ? `<div class="info-label">Context</div><div class="info-value mono">${ctxFull}</div>` : ""}
+                ${ctxFull ? `<div class="info-label">Nearby text on the page</div><div class="info-value quote">${ctxFull}</div>` : ""}
                 <div class="info-label">Score &middot; ${e.score} / 100</div>
                 <div class="info-value">${scoreInterp}</div>
               </div>
@@ -4282,7 +4359,7 @@
           const tipText = spEscape(p.context || prov);
           const provDesc = spEscape(spProvenanceDescription(p));
           const scoreInterp = spEscape(spScoreInterpretation(p.score));
-          const ctxFull = spEscape(p.context || "");
+          const ctxFull = spContextSnippet(p);
           const infoId = `phone-info-${idx}`;
           html += `
             <div class="row">
@@ -4298,7 +4375,7 @@
               <div class="info-panel" data-sp-info-panel="${infoId}">
                 <div class="info-label">Where we found it</div>
                 <div class="info-value">${provDesc}</div>
-                ${ctxFull ? `<div class="info-label">Context</div><div class="info-value mono">${ctxFull}</div>` : ""}
+                ${ctxFull ? `<div class="info-label">Nearby text on the page</div><div class="info-value quote">${ctxFull}</div>` : ""}
                 <div class="info-label">Score &middot; ${p.score} / 100</div>
                 <div class="info-value">${scoreInterp}</div>
               </div>
@@ -4494,6 +4571,11 @@
       transition: color 0.15s;
     }
     .info-btn:hover, .info-btn.open { color: #fafafa; }
+    .info-value.quote {
+      font-style: italic; color: #94a3b8; line-height: 1.5;
+      border-left: 2px solid #1f2d47; padding-left: 8px;
+    }
+    .info-value.quote strong { color: #f8fafc; font-style: normal; font-weight: 700; }
     .info-panel {
       margin-top: 8px; padding: 10px 12px;
       background: rgba(255,255,255,0.03);
