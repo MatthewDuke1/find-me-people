@@ -68,6 +68,23 @@
     .status { padding: 10px 16px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
     .status .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
     .dot-green { background: #4ade80; }
+
+    /* Network transparency row -- the receipts for "nothing leaves your browser" */
+    .net-row {
+      margin: 0 16px 6px; padding: 6px 9px; border-radius: 7px;
+      font-size: 10.5px; line-height: 1.45; display: block;
+      background: rgba(96,165,250,0.07); border: 1px solid rgba(96,165,250,0.18);
+      color: #94a3b8;
+    }
+    .net-dot {
+      width: 6px; height: 6px; border-radius: 50%; background: #4ade80;
+      display: inline-block; margin-right: 5px; vertical-align: middle;
+    }
+    .net-dot.warn { background: #fbbf24; }
+    .net-zero { color: #a1a1aa; }
+    .net-what { color: #52525b; }
+    .net-list { margin: 4px 0 0 16px; padding: 0; color: #71717a; font-size: 10px; }
+    .net-list li { margin: 1px 0; }
     .dot-yellow { background: #fbbf24; }
     .dot-red { background: #f87171; }
 

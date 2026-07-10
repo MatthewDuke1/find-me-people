@@ -498,6 +498,33 @@ function renderRebrandNotice() {
   });
 }
 
+// Network transparency row. Sula's claim is that nothing leaves your browser;
+// this shows the receipts. An empty ledger renders "0 network requests"; a
+// non-empty one names each request, because a dishonest 0 would be worse than
+// no indicator at all. Pro actions (CRM webhook) and license checks are
+// user-initiated and deliberately outside this ledger -- the tooltip says so.
+function renderNetTransparencyHtml(netLog) {
+  const log = Array.isArray(netLog) ? netLog : [];
+  if (log.length === 0) {
+    return (
+      '<div class="net-row net-zero" title="Sula scanned this page entirely on your device. Pro actions you trigger yourself (Save to CRM, license activation) are separate.">' +
+      '<span class="net-dot"></span> 0 network requests &mdash; nothing left your browser' +
+      "</div>"
+    );
+  }
+  const items = log
+    .map((e) => '<li>' + escapeHtml(e.kind) + "</li>")
+    .join("");
+  const n = log.length;
+  return (
+    '<div class="net-row net-some" title="These are the only requests Sula made, and only because the page itself had no contacts.">' +
+    '<span class="net-dot warn"></span> ' + n + " network request" + (n === 1 ? "" : "s") +
+    ' <span class="net-what">&mdash; anonymous, no cookies</span>' +
+    '<ul class="net-list">' + items + "</ul>" +
+    "</div>"
+  );
+}
+
 function showToast(msg) {
   const el = document.getElementById("copied");
   if (!el) return;
@@ -929,6 +956,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Review prompt toast (renders only after PROMPT_THRESHOLD successful copies)
     html += renderReviewToastHtml();
+
+    // Network transparency: the count of requests this scan actually made.
+    // Zero is the normal case and the whole point of the product; when it is
+    // not zero we say exactly what was fetched rather than hiding it.
+    html += renderNetTransparencyHtml(data.netLog);
 
     // Status bar
     if (total > 0) {
