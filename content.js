@@ -3675,6 +3675,14 @@
   // ===================================================================
 
   const SP_HOST_ID = "sula-side-panel-host";
+  // The injected panel lives on the page, so it can't use a relative icon
+  // path. getURL resolves to chrome-extension://<id>/..., loadable from the
+  // page because the icons are declared web_accessible in the manifest. The
+  // tab keeps its own gradient background, so a failed load degrades to a
+  // plain blue tab rather than an invisible one.
+  const SP_ICON = (chrome.runtime && chrome.runtime.getURL)
+    ? chrome.runtime.getURL("icons/icon48.png")
+    : "";
   const SP_MASTER_KEY = "fmp_side_panel_enabled";
   const SP_DISMISS_PREFIX = "fmp_side_panel_dismissed_";
   const SP_DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -4155,12 +4163,12 @@
 
     let html = `
       <div class="tab" data-sp-action="expand" role="button" aria-label="Open Sula panel" title="Sula (${total} contact${totalSuffix})">
-        <span class="tab-icon">&#128100;</span>
+        <img class="tab-icon" src="${SP_ICON}" alt="" />
         ${total > 0 ? `<span class="tab-count">${total}</span>` : ""}
       </div>
       <div class="panel" role="dialog" aria-label="Sula contacts">
         <div class="header">
-          <span class="title"><span class="logo">&#128100;</span> Sula</span>
+          <span class="title"><img class="logo" src="${SP_ICON}" alt="" /> Sula</span>
           <button class="icon-btn" data-sp-action="collapse" aria-label="Collapse">&minus;</button>
         </div>
         ${tabsHtml}
@@ -4330,7 +4338,7 @@
     .tab:hover { transform: translateX(-3px); }
     .tab.dragging { cursor: grabbing; transition: none; }
     .tab.dragging:hover { transform: none; }
-    .tab-icon { font-size: 22px; line-height: 1; }
+    .tab-icon { width: 22px; height: 22px; border-radius: 6px; display: block; }
     .tab-count {
       position: absolute;
       top: 4px;
@@ -4380,8 +4388,8 @@
     .logo {
       width: 22px;
       height: 22px;
-      background: linear-gradient(135deg, #2563eb, #60a5fa);
       border-radius: 50%;
+      object-fit: cover;
       display: inline-flex;
       align-items: center;
       justify-content: center;
