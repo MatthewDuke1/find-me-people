@@ -5,6 +5,14 @@
   "use strict";
 
   const EMAIL_REGEX = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+  // Id of the host element for our own injected side panel. Declared up here
+  // rather than next to the panel code that uses it because the shadow-root
+  // walk (forEachOpenShadowRoot) reads it to skip our own UI, and that walk
+  // runs during the initial scanPage() -- which executes long before the
+  // panel section further down. A `const` declared down there is still in the
+  // temporal dead zone at scan time, so the read threw a ReferenceError and
+  // killed the whole content script on any page with an open shadow root.
+  const SP_HOST_ID = "sula-side-panel-host";
   // ---- Network transparency ledger -------------------------------------
   // Sula's whole claim is that nothing leaves your browser. This records every
   // request the scanner actually makes so the popup can show the count -- and
@@ -3703,7 +3711,7 @@
   // is stored under a hostname-keyed entry with a 7-day TTL.
   // ===================================================================
 
-  const SP_HOST_ID = "sula-side-panel-host";
+  // SP_HOST_ID is declared at the top of the IIFE -- see the note there.
   // The injected panel lives on the page, so it can't use a relative icon
   // path. getURL resolves to chrome-extension://<id>/..., loadable from the
   // page because the icons are declared web_accessible in the manifest. The
