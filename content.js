@@ -3011,7 +3011,7 @@
     // Decode common email obfuscation patterns BEFORE running EMAIL_REGEX
     // so "jane (at) acme (dot) com", "user%40host.tld",
     // "team&#64;host.tld", "team＠host.tld", and similar all match.
-    const normalized = decodeObfuscatedText(text);
+    const normalized = decodeObfuscatedText(decodeJsStringEscapes(text));
     // Emails
     const emailMatches = normalized.match(EMAIL_REGEX) || [];
     emailMatches.forEach((email) => {
@@ -3353,7 +3353,12 @@
     // branch). A bare no-plus 10-digit foreign number is genuinely
     // ambiguous from a US one and still falls here -- that's unavoidable
     // without page-locale context.
-    if (digits.length === 10 && !hadPlus) {
+    // Require NANP validity (area code and exchange both start 2-9). A real
+    // North American number always satisfies this, so it never excludes a
+    // genuine US/CA number -- but it rejects foreign numbers that strip to
+    // 10 digits and start with a 0/1 trunk digit (e.g. "020 8090 009"),
+    // which were otherwise mangled into "(020) 809-0009".
+    if (digits.length === 10 && !hadPlus && /^[2-9]\d\d[2-9]/.test(digits)) {
       return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
     }
     if (digits.length === 11 && digits.startsWith("1")) {
