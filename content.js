@@ -201,7 +201,7 @@
 
     // 1. Scan mailto: and tel: links (highest confidence)
     document.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
-      const email = el.href.replace("mailto:", "").split("?")[0].toLowerCase();
+      const email = cleanMailtoEmail(el.href);
       if (!seen.has(email) && email.includes("@")) {
         seen.add(email);
         const context = getContext(el);
@@ -329,7 +329,7 @@
     // the dedup slot over the same address found in ordinary page prose.
     document.querySelectorAll("address").forEach((addr) => {
       addr.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
-        const email = el.href.replace("mailto:", "").split("?")[0].toLowerCase();
+        const email = cleanMailtoEmail(el.href);
         if (!seen.has(email) && email.includes("@")) {
           seen.add(email);
           const context = "from <address> tag";
@@ -1018,6 +1018,45 @@
     if (best) return `${local}@${domain.slice(0, dot + 1)}${best}`;
     return email;
   }
+
+  // mailto: hrefs can carry leading/trailing whitespace or a %20 the browser
+  // preserved ("mailto: customercare@x.com"), which otherwise surfaces as a
+  // space-prefixed value AND fails dedup against the clean text-extracted
+  // copy. Decode + trim to a clean address.
+  function cleanMailtoEmail(href) {
+    let s = String(href || "").replace(/^mailto:/i, "").split("?")[0];
+    try { s = decodeURIComponent(s); } catch (_) {}
+    return s.trim().toLowerCase();
+  }
+
+  // Common English function/pronoun/verb words that are never real mailbox
+  // names. When the DOM glues one onto an adjacent "@domain" (inline nodes
+  // with no whitespace: "reach them@acme.com", "used@www.acme.com"),
+  // EMAIL_REGEX captures a fake address. Role mailboxes (contact/info/sales/
+  // support/help/...) are deliberately NOT here, so they're never rejected.
+  const BLEED_LOCAL_STOPWORDS = new Set([
+    "them","they","their","theirs","its","his","her","our","ours","your","yours",
+    "we","us","used","using","use","located","location","please","here","there",
+    "this","that","these","those","click","learn","read","view","visit","follow",
+    "join","sign","send","reach","call","see","find","get","got","more","about",
+    "when","where","which","with","from","have","has","been","will","would",
+    "should","could","also","just","only","than","then","into","onto","over",
+    "some","any","all","each","both","what","who","how","why",
+  ]);
+
+  // True when an email is almost certainly DOM text-bleed rather than a real
+  // address: a "www." domain (that's a URL fragment) or a single all-alpha
+  // local part that's a known non-mailbox word. Only applied to free-text
+  // and inline-script sources -- mailto:/JSON-LD are authoritative.
+  function looksLikeBleedEmail(email) {
+    const at = email.indexOf("@");
+    if (at === -1) return false;
+    const local = email.slice(0, at);
+    const domain = email.slice(at + 1);
+    if (domain.startsWith("www.")) return true;
+    if (/^[a-z]+$/.test(local) && BLEED_LOCAL_STOPWORDS.has(local)) return true;
+    return false;
+  }
   // ----------------------------------------------------------------------
 
   function scanInlineScriptBodies(results, seen) {
@@ -1046,7 +1085,8 @@
           email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
           email.includes("sentry") || email.includes("webpack") ||
           email.includes("example.com") || email.includes("@2x") ||
-          email.includes("noreply") || email.includes("no-reply")
+          email.includes("noreply") || email.includes("no-reply") ||
+          looksLikeBleedEmail(email)
         ) return;
         seen.add(email);
         const context = "from inline script";
@@ -1092,7 +1132,7 @@
     forEachOpenShadowRoot(document, (sr) => {
       // mailto: links inside the shadow root
       sr.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
-        const email = el.href.replace("mailto:", "").split("?")[0].toLowerCase();
+        const email = cleanMailtoEmail(el.href);
         if (!seen.has(email) && email.includes("@")) {
           seen.add(email);
           const context = getContext(el);
@@ -2117,7 +2157,7 @@
       // it carries -- those are higher-confidence than free text.
       try {
         doc.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
-          const raw = (el.getAttribute("href") || "").replace("mailto:", "").split("?")[0].toLowerCase();
+          const raw = cleanMailtoEmail(el.getAttribute("href"));
           if (!raw || !raw.includes("@")) return;
           const email = trimDigitPrefixBleed(raw);
           if (seen.has(email)) return;
@@ -2359,7 +2399,7 @@
 
         // mailto: / tel: anchors -- highest confidence on a contact page.
         doc.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
-          const raw = (el.getAttribute("href") || "").replace("mailto:", "").split("?")[0].toLowerCase();
+          const raw = cleanMailtoEmail(el.getAttribute("href"));
           if (!raw || !raw.includes("@")) return;
           const email = trimDigitPrefixBleed(raw);
           if (seen.has(email)) return;
@@ -2459,7 +2499,7 @@
         // body-text matches -- explicit links on a contact page are high
         // confidence signal.
         doc.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
-          const raw = (el.getAttribute("href") || "").replace("mailto:", "").split("?")[0].toLowerCase();
+          const raw = cleanMailtoEmail(el.getAttribute("href"));
           if (!raw || !raw.includes("@")) return;
           const email = trimDigitPrefixBleed(raw);
           if (seen.has(email)) return;
@@ -3023,7 +3063,8 @@
         !email.endsWith(".svg") &&
         !email.includes("sentry") &&
         !email.includes("webpack") &&
-        !email.includes("example.com")
+        !email.includes("example.com") &&
+        !looksLikeBleedEmail(email)
       ) {
         seen.add(email);
         const context = parentEl ? getContext(parentEl) : "";
