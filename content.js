@@ -956,6 +956,66 @@
   //   - extremely large scripts (>500KB; minified vendor bundles, perf hit
   //     + noise dominate signal -- the page-globals bridge already caught
   //     anything load-bearing from the bundle)
+  // ---- Email decode / TLD-bleed helpers --------------------------------
+  // Inline scripts and JSON blobs escape characters: ">" is '>',
+  // "\x40" is '@', "\/" is '/'. Decode these before EMAIL_REGEX, or a string
+  // like "...>help@acme.com" is captured as "u003ehelp@acme.com" (the
+  // backslash breaks the local-part match, leaving the "u003e" prefix glued
+  // to the address). decodeObfuscatedText handles prose obfuscation, not
+  // backslash escapes, so we run this first.
+  function decodeJsStringEscapes(s) {
+    if (!s || s.indexOf("\\") === -1) return s;
+    try {
+      return s
+        .replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+        .replace(/\\x([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+        .replace(/\\\//g, "/");
+    } catch (_) { return s; }
+  }
+
+  // Known TLDs (common + the longer gTLDs that actually appear on contact
+  // pages, including ones that share a prefix with a shorter TLD like
+  // "company"/"community"/"coop"). Used to trim TLD-side text bleed: when a
+  // page renders "press@acme.comDownload" with no whitespace, EMAIL_REGEX
+  // greedily eats "comdownload" as the TLD. If the matched label isn't itself
+  // a known TLD but begins with one and the remainder looks like a bled word
+  // (>=3 extra chars), trim back to the known TLD. Exact-match known TLDs are
+  // left untouched, so real long TLDs survive.
+  const KNOWN_TLDS = new Set([
+    "com","org","net","edu","gov","mil","int","io","co","ai","app","dev","xyz",
+    "info","biz","name","pro","tech","technology","online","site","website",
+    "store","shop","blog","cloud","email","group","media","agency","company",
+    "community","organic","network","coop","codes","digital","education",
+    "solutions","services","finance","marketing","consulting","software",
+    "systems","ventures","capital","partners","foundation","institute",
+    "diversity","international","us","uk","ca","au","de","fr","es","it","nl",
+    "se","no","fi","dk","ie","ch","at","be","pt","pl","cz","ru","ua","in","cn",
+    "jp","kr","sg","hk","tw","nz","za","br","mx","ar","cl",
+  ]);
+  const SAFE_TRIM_TLDS = ["com","org","net","edu","gov","io"];
+
+  function trimTldBleed(email) {
+    if (!email || email.indexOf("@") === -1) return email;
+    const at = email.lastIndexOf("@");
+    const local = email.slice(0, at);
+    const domain = email.slice(at + 1);
+    const dot = domain.lastIndexOf(".");
+    if (dot === -1) return email;
+    const label = domain.slice(dot + 1);
+    if (!label || KNOWN_TLDS.has(label)) return email; // already a valid TLD
+    // Not a known TLD: if it begins with one of the short "safe" TLDs and the
+    // trailing remainder is long enough to be a bled word, trim to that TLD.
+    let best = "";
+    for (const tld of SAFE_TRIM_TLDS) {
+      if (label.startsWith(tld) && tld.length > best.length && label.length - tld.length >= 3) {
+        best = tld;
+      }
+    }
+    if (best) return `${local}@${domain.slice(0, dot + 1)}${best}`;
+    return email;
+  }
+  // ----------------------------------------------------------------------
+
   function scanInlineScriptBodies(results, seen) {
     const MAX_SCRIPT_BYTES = 500000;
     document.querySelectorAll("script").forEach((script) => {
@@ -969,11 +1029,11 @@
       // inline scripts embed contact info as encoded strings (HTML entities
       // in attribute fragments, fullwidth-at workarounds, etc.). For raw
       // JS strings the decoder is a no-op pass through, so cost is bounded.
-      const decoded = decodeObfuscatedText(text);
+      const decoded = decodeObfuscatedText(decodeJsStringEscapes(text));
 
       const emailMatches = decoded.match(EMAIL_REGEX) || [];
       emailMatches.forEach((email) => {
-        email = trimDigitPrefixBleed(email.toLowerCase());
+        email = trimTldBleed(trimDigitPrefixBleed(email.toLowerCase()));
         if (seen.has(email)) return;
         // Same noise filters scanPageGlobals applies -- minified bundles
         // are full of asset-path-shaped strings and SDK error reporters
@@ -2951,7 +3011,7 @@
     // Emails
     const emailMatches = normalized.match(EMAIL_REGEX) || [];
     emailMatches.forEach((email) => {
-      email = trimDigitPrefixBleed(email.toLowerCase());
+      email = trimTldBleed(trimDigitPrefixBleed(email.toLowerCase()));
       if (
         !seen.has(email) &&
         !email.endsWith(".png") &&
