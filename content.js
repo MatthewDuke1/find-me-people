@@ -493,6 +493,10 @@
     // 5. Scan for hours of operation
     extractHours(results, hoursSeen);
 
+    // Collapse text-scraped phone fragments that are truncations of a fuller,
+    // higher-confidence number before sorting/displaying.
+    dedupePhonesFinal(results);
+
     // Sort by relevance score
     results.emails.sort((a, b) => b.score - a.score);
     results.phones.sort((a, b) => b.score - a.score);
@@ -3261,6 +3265,27 @@
     digits = digits.replace(/^0+/, "");
     if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
     return digits;
+  }
+
+  // Final phone cleanup: the free-text pass sometimes mis-groups a number
+  // into a truncated fragment -- e.g. "+3 317 301 52" (digits 331730152)
+  // captured alongside the correct tel: "+33 1 73 01 52 44" (digits
+  // 33173015244). Same number, different grouping, so phoneKey doesn't
+  // collapse them. Drop any phone whose digit string is a strict prefix of a
+  // longer, at-least-as-trusted phone's digits.
+  function dedupePhonesFinal(results) {
+    const list = results.phones;
+    if (!list || list.length < 2) return;
+    const dig = (p) => String(p.value).replace(/\D/g, "").replace(/^0+/, "");
+    const withDigits = list.map((p) => ({ p, d: dig(p) }));
+    results.phones = withDigits
+      .filter(({ p, d }) => {
+        if (d.length < 7) return true; // too short to reason about; keep
+        return !withDigits.some(
+          (o) => o.p !== p && o.d.length > d.length && o.d.startsWith(d) && o.p.score >= p.score
+        );
+      })
+      .map(({ p }) => p);
   }
 
   // Cloudflare email-protection decoder. The data-cfemail attribute is hex;
