@@ -3253,7 +3253,12 @@
   // handler stored the digits-only "2818165935" -- different keys for the
   // same number, so dedup missed and both got pushed.
   function phoneKey(s) {
-    const digits = String(s).replace(/\D/g, "");
+    let digits = String(s).replace(/\D/g, "");
+    // Strip a leading international-access ("00") or national trunk ("0")
+    // prefix so the same number written "0800 222 0652" (from a tel: href)
+    // and "(800) 222-0652" (from visible text) collapse to one key instead
+    // of surfacing as two identical-looking phones.
+    digits = digits.replace(/^0+/, "");
     if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
     return digits;
   }
@@ -3274,6 +3279,19 @@
       return email;
     } catch (_) { return null; }
   }
+
+  // E.164 country calling codes by length. CC1 = 1-digit codes (NANP +
+  // Russia/Kazakhstan), CC2 = the assigned 2-digit codes; anything not in
+  // either is a 3-digit code (e.g. 503 El Salvador, 591 Bolivia, 972 Israel).
+  // Used by formatPhone's international fallback to split the country code
+  // correctly instead of guessing from the number's length.
+  const INTL_CC1 = new Set(["1", "7"]);
+  const INTL_CC2 = new Set([
+    "20", "27", "30", "31", "32", "33", "34", "36", "39", "40", "41", "43",
+    "44", "45", "46", "47", "48", "49", "51", "52", "53", "54", "55", "56",
+    "57", "58", "60", "61", "62", "63", "64", "65", "66", "81", "82", "84",
+    "86", "90", "91", "92", "93", "94", "95", "98",
+  ]);
 
   function formatPhone(phone) {
     // Normalize various input shapes (raw digits from tel: links, free-text
@@ -3301,7 +3319,16 @@
     // US / Canada: 10 digits or 11 with leading 1 -> (NNN) NNN-NNNN.
     // (We drop the country code for display; toE164() re-adds it for VOIP
     // URLs so call routing is unaffected.)
-    if (digits.length === 10) {
+    //
+    // Only US-format a bare 10-digit number when the source had NO leading
+    // "+". A number written "+509 1234 5678" (Haiti) strips to 10 digits and
+    // would otherwise be mangled into a fake US "(509) 123-4567". A plus
+    // means the page explicitly declared a country code, so it belongs in
+    // the international path below unless it's +1 (handled by the 11-digit
+    // branch). A bare no-plus 10-digit foreign number is genuinely
+    // ambiguous from a US one and still falls here -- that's unavoidable
+    // without page-locale context.
+    if (digits.length === 10 && !hadPlus) {
       return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
     }
     if (digits.length === 11 && digits.startsWith("1")) {
@@ -3347,10 +3374,13 @@
         const n = digits.slice(2);
         return `+91 ${n.slice(0, 5)} ${n.slice(5)}`;
       }
-      // Generic fallback for anything else with a + and enough digits:
-      // assume the first 1-3 digits are the country code (E.164 spec) and
-      // group the remainder in chunks of 3-4. Better than a wall of digits.
-      const ccLen = digits.length > 12 ? 3 : digits.length > 10 ? 2 : 1;
+      // Generic fallback for anything else with a + and enough digits.
+      // Determine the country-code length from the actual E.164 assignment
+      // rather than guessing by total length -- the old length heuristic
+      // split "+503..." (El Salvador) into "+50 3..." and "+55..." (Brazil)
+      // into "+551...". CC1/CC2 hold the 1- and 2-digit calling codes;
+      // everything else is a 3-digit code.
+      const ccLen = INTL_CC1.has(digits.slice(0, 1)) ? 1 : INTL_CC2.has(digits.slice(0, 2)) ? 2 : 3;
       const cc = digits.slice(0, ccLen);
       const rest = digits.slice(ccLen);
       const rgroups = rest.length <= 7 ? [3, rest.length - 3] : rest.length <= 9 ? [3, 3, rest.length - 6] : [3, 3, 4];
