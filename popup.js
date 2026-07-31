@@ -1008,11 +1008,13 @@ document.addEventListener("DOMContentLoaded", async () => {
                 <span class="email-quality q-${q.tone}" title="Email-quality hint (read locally from the address)">${q.label}</span>
                 <span class="provenance" title="Found live on this page just now — read from the page, not a stored database">via ${provE}</span>
                 <span class="score ${scoreClass}">${scoreLabel}</span>
+                <span class="verify-result" data-verify-result="${id}"></span>
               </div>
             </div>
             <div class="row-actions">
               <button class="actions-toggle" data-toggle="${id}">Compose <span class="caret">&#9662;</span></button>
               <button class="actions-toggle vcard-btn" data-save-vcard="email" data-value="${escVal}" title="Save as .vcf contact">&#11015; .vcf</button>
+              <button class="actions-toggle verify-btn" data-verify-email="${escVal}" data-verify-score="${e.score}" data-verify-target="${id}" title="Check whether this mailbox can actually receive mail">&#10003; Verify</button>
             </div>
             <div class="actions-panel" data-panel="${id}">
               <div class="action-chips">${tplChips}</div>
@@ -1120,6 +1122,48 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (type === "email" || type === "phone") {
           addToHistory({ value, type, hostname, score });
         }
+      });
+    });
+
+    // Verify (email deliverability) -- Tiers 1-2 free/local + backend-stubbed
+    // Tier 3. Click-triggered, never automatic: consistent with Sula's
+    // "network transparency, zero requests is the normal case" principle --
+    // the user explicitly opts into the one outbound MX/verify call per email.
+    // window.SulaVerify is provided by email-verify.js (loaded before popup.js).
+    contentEl.querySelectorAll("[data-verify-email]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const email = btn.dataset.verifyEmail;
+        const relScore = parseInt(btn.dataset.verifyScore || "0", 10) || 0;
+        // Pair to the result span by the row's own id (safe selector value),
+        // not the email string (which can contain +/. that break querySelector).
+        const out = contentEl.querySelector(`[data-verify-result="${btn.dataset.verifyTarget}"]`);
+        if (!window.SulaVerify) return;
+        btn.disabled = true;
+        const setBadge = (b) => {
+          if (out) { out.textContent = b.label; out.className = `verify-result vr-${b.tier}`; out.title = b.detail; }
+        };
+        setBadge({ label: "Checking…", tier: "neutral", detail: "Running verification" });
+        // Tier 1 (local): syntax first -- cheapest possible early exit.
+        const t1 = window.SulaVerify.tier1Check(email);
+        if (!t1.validSyntax) {
+          setBadge(window.SulaVerify.composeVerificationBadge(relScore, { status: "invalid", reason: "bad_syntax" }));
+          btn.disabled = false;
+          return;
+        }
+        // Tier 2 (one DoH MX call, free). No MX -> definitively invalid, stop.
+        const mx = await window.SulaVerify.checkMxRecord(t1.domain);
+        if (mx && mx.hasMx === false) {
+          setBadge(window.SulaVerify.composeVerificationBadge(relScore, { status: "invalid" }));
+          btn.disabled = false;
+          return;
+        }
+        // Tier 3 (Pro, backend-stubbed today). Returns not_configured until a
+        // verification provider is wired -- surfaced honestly, never as a
+        // false "verified".
+        const v = await window.SulaVerify.verifyMailbox(email);
+        setBadge(window.SulaVerify.composeVerificationBadge(relScore, v));
+        btn.disabled = false;
       });
     });
 
