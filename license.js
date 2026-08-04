@@ -18,14 +18,14 @@ const LS_API = "https://api.lemonsqueezy.com/v1/licenses";
 const LIC_STORE_KEY = "fmp_license"; // chrome.storage.local
 // Set by background.js for anyone who installed before Pro cost anything.
 const EARLY_KEY = "sula_early_supporter";
-const PRO_ENFORCED = false; // <-- flip to true when the LemonSqueezy store is live
+const PRO_ENFORCED = true; // live since 2.1.0 — must ship with manifest >= PRICING_VERSION
 const VALIDATE_EVERY_MS = 24 * 60 * 60 * 1000; // re-check at most daily
 
 // Your LemonSqueezy hosted checkout links (fill in after creating the products).
 const CHECKOUT = {
-  monthly: "https://REPLACE_STORE.lemonsqueezy.com/buy/REPLACE_MONTHLY_ID",
-  annual: "https://REPLACE_STORE.lemonsqueezy.com/buy/REPLACE_ANNUAL_ID",
-  lifetime: "https://REPLACE_STORE.lemonsqueezy.com/buy/REPLACE_LIFETIME_ID",
+  monthly: "https://sula.lemonsqueezy.com/checkout/buy/47598c36-6163-4f4e-93de-9266450ebfaa",
+  annual: "https://sula.lemonsqueezy.com/checkout/buy/ac76da47-0b68-4431-8728-a2b8d6ad5ecf",
+  lifetime: "https://sula.lemonsqueezy.com/checkout/buy/1f26fe80-e487-4305-9593-5301dd0279cb",
 };
 // Which checkout the "Upgrade to Pro" button opens by default.
 const DEFAULT_CHECKOUT = CHECKOUT.lifetime;
