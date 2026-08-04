@@ -5,6 +5,14 @@
   "use strict";
 
   const EMAIL_REGEX = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+  // Id of the host element for our own injected side panel. Declared up here
+  // rather than next to the panel code that uses it because the shadow-root
+  // walk (forEachOpenShadowRoot) reads it to skip our own UI, and that walk
+  // runs during the initial scanPage() -- which executes long before the
+  // panel section further down. A `const` declared down there is still in the
+  // temporal dead zone at scan time, so the read threw a ReferenceError and
+  // killed the whole content script on any page with an open shadow root.
+  const SP_HOST_ID = "sula-side-panel-host";
   // ---- Network transparency ledger -------------------------------------
   // Sula's whole claim is that nothing leaves your browser. This records every
   // request the scanner actually makes so the popup can show the count -- and
@@ -193,7 +201,7 @@
 
     // 1. Scan mailto: and tel: links (highest confidence)
     document.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
-      const email = el.href.replace("mailto:", "").split("?")[0].toLowerCase();
+      const email = cleanMailtoEmail(el.href);
       if (!seen.has(email) && email.includes("@")) {
         seen.add(email);
         const context = getContext(el);
@@ -321,7 +329,7 @@
     // the dedup slot over the same address found in ordinary page prose.
     document.querySelectorAll("address").forEach((addr) => {
       addr.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
-        const email = el.href.replace("mailto:", "").split("?")[0].toLowerCase();
+        const email = cleanMailtoEmail(el.href);
         if (!seen.has(email) && email.includes("@")) {
           seen.add(email);
           const context = "from <address> tag";
@@ -484,6 +492,10 @@
 
     // 5. Scan for hours of operation
     extractHours(results, hoursSeen);
+
+    // Collapse text-scraped phone fragments that are truncations of a fuller,
+    // higher-confidence number before sorting/displaying.
+    dedupePhonesFinal(results);
 
     // Sort by relevance score
     results.emails.sort((a, b) => b.score - a.score);
@@ -948,6 +960,105 @@
   //   - extremely large scripts (>500KB; minified vendor bundles, perf hit
   //     + noise dominate signal -- the page-globals bridge already caught
   //     anything load-bearing from the bundle)
+  // ---- Email decode / TLD-bleed helpers --------------------------------
+  // Inline scripts and JSON blobs escape characters: ">" is '>',
+  // "\x40" is '@', "\/" is '/'. Decode these before EMAIL_REGEX, or a string
+  // like "...>help@acme.com" is captured as "u003ehelp@acme.com" (the
+  // backslash breaks the local-part match, leaving the "u003e" prefix glued
+  // to the address). decodeObfuscatedText handles prose obfuscation, not
+  // backslash escapes, so we run this first.
+  function decodeJsStringEscapes(s) {
+    if (!s || s.indexOf("\\") === -1) return s;
+    try {
+      return s
+        .replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+        .replace(/\\x([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+        .replace(/\\\//g, "/");
+    } catch (_) { return s; }
+  }
+
+  // Known TLDs (common + the longer gTLDs that actually appear on contact
+  // pages, including ones that share a prefix with a shorter TLD like
+  // "company"/"community"/"coop"). Used to trim TLD-side text bleed: when a
+  // page renders "press@acme.comDownload" with no whitespace, EMAIL_REGEX
+  // greedily eats "comdownload" as the TLD. If the matched label isn't itself
+  // a known TLD but begins with one and the remainder looks like a bled word
+  // (>=3 extra chars), trim back to the known TLD. Exact-match known TLDs are
+  // left untouched, so real long TLDs survive.
+  const KNOWN_TLDS = new Set([
+    "com","org","net","edu","gov","mil","int","io","co","ai","app","dev","xyz",
+    "info","biz","name","pro","tech","technology","online","site","website",
+    "store","shop","blog","cloud","email","group","media","agency","company",
+    "community","organic","network","coop","codes","digital","education",
+    "solutions","services","finance","marketing","consulting","software",
+    "systems","ventures","capital","partners","foundation","institute",
+    "diversity","international","us","uk","ca","au","de","fr","es","it","nl",
+    "se","no","fi","dk","ie","ch","at","be","pt","pl","cz","ru","ua","in","cn",
+    "jp","kr","sg","hk","tw","nz","za","br","mx","ar","cl",
+  ]);
+  const SAFE_TRIM_TLDS = ["com","org","net","edu","gov","io"];
+
+  function trimTldBleed(email) {
+    if (!email || email.indexOf("@") === -1) return email;
+    const at = email.lastIndexOf("@");
+    const local = email.slice(0, at);
+    const domain = email.slice(at + 1);
+    const dot = domain.lastIndexOf(".");
+    if (dot === -1) return email;
+    const label = domain.slice(dot + 1);
+    if (!label || KNOWN_TLDS.has(label)) return email; // already a valid TLD
+    // Not a known TLD: if it begins with one of the short "safe" TLDs and the
+    // trailing remainder is long enough to be a bled word, trim to that TLD.
+    let best = "";
+    for (const tld of SAFE_TRIM_TLDS) {
+      if (label.startsWith(tld) && tld.length > best.length && label.length - tld.length >= 3) {
+        best = tld;
+      }
+    }
+    if (best) return `${local}@${domain.slice(0, dot + 1)}${best}`;
+    return email;
+  }
+
+  // mailto: hrefs can carry leading/trailing whitespace or a %20 the browser
+  // preserved ("mailto: customercare@x.com"), which otherwise surfaces as a
+  // space-prefixed value AND fails dedup against the clean text-extracted
+  // copy. Decode + trim to a clean address.
+  function cleanMailtoEmail(href) {
+    let s = String(href || "").replace(/^mailto:/i, "").split("?")[0];
+    try { s = decodeURIComponent(s); } catch (_) {}
+    return s.trim().toLowerCase();
+  }
+
+  // Common English function/pronoun/verb words that are never real mailbox
+  // names. When the DOM glues one onto an adjacent "@domain" (inline nodes
+  // with no whitespace: "reach them@acme.com", "used@www.acme.com"),
+  // EMAIL_REGEX captures a fake address. Role mailboxes (contact/info/sales/
+  // support/help/...) are deliberately NOT here, so they're never rejected.
+  const BLEED_LOCAL_STOPWORDS = new Set([
+    "them","they","their","theirs","its","his","her","our","ours","your","yours",
+    "we","us","used","using","use","located","location","please","here","there",
+    "this","that","these","those","click","learn","read","view","visit","follow",
+    "join","sign","send","reach","call","see","find","get","got","more","about",
+    "when","where","which","with","from","have","has","been","will","would",
+    "should","could","also","just","only","than","then","into","onto","over",
+    "some","any","all","each","both","what","who","how","why",
+  ]);
+
+  // True when an email is almost certainly DOM text-bleed rather than a real
+  // address: a "www." domain (that's a URL fragment) or a single all-alpha
+  // local part that's a known non-mailbox word. Only applied to free-text
+  // and inline-script sources -- mailto:/JSON-LD are authoritative.
+  function looksLikeBleedEmail(email) {
+    const at = email.indexOf("@");
+    if (at === -1) return false;
+    const local = email.slice(0, at);
+    const domain = email.slice(at + 1);
+    if (domain.startsWith("www.")) return true;
+    if (/^[a-z]+$/.test(local) && BLEED_LOCAL_STOPWORDS.has(local)) return true;
+    return false;
+  }
+  // ----------------------------------------------------------------------
+
   function scanInlineScriptBodies(results, seen) {
     const MAX_SCRIPT_BYTES = 500000;
     document.querySelectorAll("script").forEach((script) => {
@@ -961,11 +1072,11 @@
       // inline scripts embed contact info as encoded strings (HTML entities
       // in attribute fragments, fullwidth-at workarounds, etc.). For raw
       // JS strings the decoder is a no-op pass through, so cost is bounded.
-      const decoded = decodeObfuscatedText(text);
+      const decoded = decodeObfuscatedText(decodeJsStringEscapes(text));
 
       const emailMatches = decoded.match(EMAIL_REGEX) || [];
       emailMatches.forEach((email) => {
-        email = trimDigitPrefixBleed(email.toLowerCase());
+        email = trimTldBleed(trimDigitPrefixBleed(email.toLowerCase()));
         if (seen.has(email)) return;
         // Same noise filters scanPageGlobals applies -- minified bundles
         // are full of asset-path-shaped strings and SDK error reporters
@@ -974,7 +1085,8 @@
           email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
           email.includes("sentry") || email.includes("webpack") ||
           email.includes("example.com") || email.includes("@2x") ||
-          email.includes("noreply") || email.includes("no-reply")
+          email.includes("noreply") || email.includes("no-reply") ||
+          looksLikeBleedEmail(email)
         ) return;
         seen.add(email);
         const context = "from inline script";
@@ -1020,7 +1132,7 @@
     forEachOpenShadowRoot(document, (sr) => {
       // mailto: links inside the shadow root
       sr.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
-        const email = el.href.replace("mailto:", "").split("?")[0].toLowerCase();
+        const email = cleanMailtoEmail(el.href);
         if (!seen.has(email) && email.includes("@")) {
           seen.add(email);
           const context = getContext(el);
@@ -2045,7 +2157,7 @@
       // it carries -- those are higher-confidence than free text.
       try {
         doc.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
-          const raw = (el.getAttribute("href") || "").replace("mailto:", "").split("?")[0].toLowerCase();
+          const raw = cleanMailtoEmail(el.getAttribute("href"));
           if (!raw || !raw.includes("@")) return;
           const email = trimDigitPrefixBleed(raw);
           if (seen.has(email)) return;
@@ -2287,7 +2399,7 @@
 
         // mailto: / tel: anchors -- highest confidence on a contact page.
         doc.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
-          const raw = (el.getAttribute("href") || "").replace("mailto:", "").split("?")[0].toLowerCase();
+          const raw = cleanMailtoEmail(el.getAttribute("href"));
           if (!raw || !raw.includes("@")) return;
           const email = trimDigitPrefixBleed(raw);
           if (seen.has(email)) return;
@@ -2387,7 +2499,7 @@
         // body-text matches -- explicit links on a contact page are high
         // confidence signal.
         doc.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
-          const raw = (el.getAttribute("href") || "").replace("mailto:", "").split("?")[0].toLowerCase();
+          const raw = cleanMailtoEmail(el.getAttribute("href"));
           if (!raw || !raw.includes("@")) return;
           const email = trimDigitPrefixBleed(raw);
           if (seen.has(email)) return;
@@ -2939,11 +3051,11 @@
     // Decode common email obfuscation patterns BEFORE running EMAIL_REGEX
     // so "jane (at) acme (dot) com", "user%40host.tld",
     // "team&#64;host.tld", "team＠host.tld", and similar all match.
-    const normalized = decodeObfuscatedText(text);
+    const normalized = decodeObfuscatedText(decodeJsStringEscapes(text));
     // Emails
     const emailMatches = normalized.match(EMAIL_REGEX) || [];
     emailMatches.forEach((email) => {
-      email = trimDigitPrefixBleed(email.toLowerCase());
+      email = trimTldBleed(trimDigitPrefixBleed(email.toLowerCase()));
       if (
         !seen.has(email) &&
         !email.endsWith(".png") &&
@@ -2951,7 +3063,8 @@
         !email.endsWith(".svg") &&
         !email.includes("sentry") &&
         !email.includes("webpack") &&
-        !email.includes("example.com")
+        !email.includes("example.com") &&
+        !looksLikeBleedEmail(email)
       ) {
         seen.add(email);
         const context = parentEl ? getContext(parentEl) : "";
@@ -3185,9 +3298,35 @@
   // handler stored the digits-only "2818165935" -- different keys for the
   // same number, so dedup missed and both got pushed.
   function phoneKey(s) {
-    const digits = String(s).replace(/\D/g, "");
+    let digits = String(s).replace(/\D/g, "");
+    // Strip a leading international-access ("00") or national trunk ("0")
+    // prefix so the same number written "0800 222 0652" (from a tel: href)
+    // and "(800) 222-0652" (from visible text) collapse to one key instead
+    // of surfacing as two identical-looking phones.
+    digits = digits.replace(/^0+/, "");
     if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
     return digits;
+  }
+
+  // Final phone cleanup: the free-text pass sometimes mis-groups a number
+  // into a truncated fragment -- e.g. "+3 317 301 52" (digits 331730152)
+  // captured alongside the correct tel: "+33 1 73 01 52 44" (digits
+  // 33173015244). Same number, different grouping, so phoneKey doesn't
+  // collapse them. Drop any phone whose digit string is a strict prefix of a
+  // longer, at-least-as-trusted phone's digits.
+  function dedupePhonesFinal(results) {
+    const list = results.phones;
+    if (!list || list.length < 2) return;
+    const dig = (p) => String(p.value).replace(/\D/g, "").replace(/^0+/, "");
+    const withDigits = list.map((p) => ({ p, d: dig(p) }));
+    results.phones = withDigits
+      .filter(({ p, d }) => {
+        if (d.length < 7) return true; // too short to reason about; keep
+        return !withDigits.some(
+          (o) => o.p !== p && o.d.length > d.length && o.d.startsWith(d) && o.p.score >= p.score
+        );
+      })
+      .map(({ p }) => p);
   }
 
   // Cloudflare email-protection decoder. The data-cfemail attribute is hex;
@@ -3206,6 +3345,19 @@
       return email;
     } catch (_) { return null; }
   }
+
+  // E.164 country calling codes by length. CC1 = 1-digit codes (NANP +
+  // Russia/Kazakhstan), CC2 = the assigned 2-digit codes; anything not in
+  // either is a 3-digit code (e.g. 503 El Salvador, 591 Bolivia, 972 Israel).
+  // Used by formatPhone's international fallback to split the country code
+  // correctly instead of guessing from the number's length.
+  const INTL_CC1 = new Set(["1", "7"]);
+  const INTL_CC2 = new Set([
+    "20", "27", "30", "31", "32", "33", "34", "36", "39", "40", "41", "43",
+    "44", "45", "46", "47", "48", "49", "51", "52", "53", "54", "55", "56",
+    "57", "58", "60", "61", "62", "63", "64", "65", "66", "81", "82", "84",
+    "86", "90", "91", "92", "93", "94", "95", "98",
+  ]);
 
   function formatPhone(phone) {
     // Normalize various input shapes (raw digits from tel: links, free-text
@@ -3233,7 +3385,21 @@
     // US / Canada: 10 digits or 11 with leading 1 -> (NNN) NNN-NNNN.
     // (We drop the country code for display; toE164() re-adds it for VOIP
     // URLs so call routing is unaffected.)
-    if (digits.length === 10) {
+    //
+    // Only US-format a bare 10-digit number when the source had NO leading
+    // "+". A number written "+509 1234 5678" (Haiti) strips to 10 digits and
+    // would otherwise be mangled into a fake US "(509) 123-4567". A plus
+    // means the page explicitly declared a country code, so it belongs in
+    // the international path below unless it's +1 (handled by the 11-digit
+    // branch). A bare no-plus 10-digit foreign number is genuinely
+    // ambiguous from a US one and still falls here -- that's unavoidable
+    // without page-locale context.
+    // Require NANP validity (area code and exchange both start 2-9). A real
+    // North American number always satisfies this, so it never excludes a
+    // genuine US/CA number -- but it rejects foreign numbers that strip to
+    // 10 digits and start with a 0/1 trunk digit (e.g. "020 8090 009"),
+    // which were otherwise mangled into "(020) 809-0009".
+    if (digits.length === 10 && !hadPlus && /^[2-9]\d\d[2-9]/.test(digits)) {
       return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
     }
     if (digits.length === 11 && digits.startsWith("1")) {
@@ -3279,10 +3445,13 @@
         const n = digits.slice(2);
         return `+91 ${n.slice(0, 5)} ${n.slice(5)}`;
       }
-      // Generic fallback for anything else with a + and enough digits:
-      // assume the first 1-3 digits are the country code (E.164 spec) and
-      // group the remainder in chunks of 3-4. Better than a wall of digits.
-      const ccLen = digits.length > 12 ? 3 : digits.length > 10 ? 2 : 1;
+      // Generic fallback for anything else with a + and enough digits.
+      // Determine the country-code length from the actual E.164 assignment
+      // rather than guessing by total length -- the old length heuristic
+      // split "+503..." (El Salvador) into "+50 3..." and "+55..." (Brazil)
+      // into "+551...". CC1/CC2 hold the 1- and 2-digit calling codes;
+      // everything else is a 3-digit code.
+      const ccLen = INTL_CC1.has(digits.slice(0, 1)) ? 1 : INTL_CC2.has(digits.slice(0, 2)) ? 2 : 3;
       const cc = digits.slice(0, ccLen);
       const rest = digits.slice(ccLen);
       const rgroups = rest.length <= 7 ? [3, rest.length - 3] : rest.length <= 9 ? [3, 3, rest.length - 6] : [3, 3, 4];
@@ -3703,7 +3872,7 @@
   // is stored under a hostname-keyed entry with a 7-day TTL.
   // ===================================================================
 
-  const SP_HOST_ID = "sula-side-panel-host";
+  // SP_HOST_ID is declared at the top of the IIFE -- see the note there.
   // The injected panel lives on the page, so it can't use a relative icon
   // path. getURL resolves to chrome-extension://<id>/..., loadable from the
   // page because the icons are declared web_accessible in the manifest. The
