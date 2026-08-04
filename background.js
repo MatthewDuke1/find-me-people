@@ -72,3 +72,115 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     chrome.action.setBadgeBackgroundColor({ color, tabId: sender.tab.id });
   }
 });
+
+// ── Email verification pipeline — Tier 2/3 network egress ──────────────────
+// Deliberately handled here (service worker), not in a content script:
+// fetch() from a service worker is NOT subject to the current page's
+// Content-Security-Policy connect-src directive, so a CSP-strict page can
+// never silently break these calls. Single, auditable point of network
+// egress for the whole verification feature. See email-verify.js for the
+// full pipeline design (Tiers 1-4).
+
+// Tier 2 — MX record lookup via a PUBLIC DNS-over-HTTPS resolver (Cloudflare).
+// Not Sula-run infra: only the bare domain is sent, to a third-party
+// privacy-respecting resolver, never the full email address or any page
+// content. Real, functioning check — not a stub.
+async function checkMxViaDoh(domain) {
+  const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=MX`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/dns-json" },
+      signal: controller.signal,
+    });
+    if (!res.ok) return { hasMx: null, error: `http_${res.status}` };
+    const data = await res.json();
+    // Status 0 = NOERROR. Answer entries with type 15 are MX records.
+    const hasMx =
+      data && data.Status === 0 && Array.isArray(data.Answer) &&
+      data.Answer.some((a) => a.type === 15);
+    return { hasMx: !!hasMx };
+  } catch (e) {
+    return { hasMx: null, error: e && e.name === "AbortError" ? "timeout" : "network_error" };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// Tier 3 — real mailbox (SMTP-level) verification. STUBBED: no provider is
+// wired yet (see docs/ — build-vs-buy: rent verification from an established
+// provider like MyEmailVerifier/ZeroBounce rather than run our own
+// SMTP-probing infra; port 25 is blocked outbound by default on AWS/Azure,
+// and IP-reputation/greylisting management is a real ongoing cost).
+//
+// TO WIRE A REAL PROVIDER:
+//   1. Pick a provider, get an API key.
+//   2. Replace this function's body with a fetch() to that provider,
+//      normalizing its response to { status: "verified"|"invalid"|
+//      "catch_all"|"greylisted"|"unknown", reason? }.
+//   3. NEVER ship the provider's API key in the extension bundle — this
+//      function already runs in the background service worker, so the key
+//      can live in a small server-side proxy this function calls instead of
+//      the provider directly (keeps the key off the client entirely).
+//   4. Real Pro enforcement for a PAID backend call should validate the
+//      LemonSqueezy license key server-side at that proxy — do not trust a
+//      same-device chrome.storage flag for this, since that's locally
+//      spoofable. The client-side isPro() check in email-verify.js is a UX
+//      gate (avoid the round-trip when obviously free), not the security
+//      boundary.
+async function verifyMailboxStub(_email) {
+  return { status: "not_configured", reason: "provider_not_wired" };
+}
+
+// Lightweight Pro-check forwarder. Soft-launch (PRO_ENFORCED=false in
+// license.js) means everyone is Pro today, so this mirrors that rather than
+// re-implementing license.js's full validate-against-LemonSqueezy flow in
+// the service worker. Once a real Tier-3 provider is wired and Pro is
+// actually enforced, verifyMailboxStub's real replacement should validate
+// the license key directly (see note above) rather than rely on this.
+async function isProViaStorage() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["fmp_license", "sula_early_supporter"], (r) => {
+      resolve(!!(r.sula_early_supporter || (r.fmp_license && r.fmp_license.pro)));
+    });
+  });
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === "sula:checkMx") {
+    checkMxViaDoh(msg.domain).then(sendResponse);
+    return true; // async response
+  }
+  if (msg.action === "sula:verifyMailbox") {
+    verifyMailboxStub(msg.email).then(sendResponse);
+    return true;
+  }
+  if (msg.action === "sula:isPro") {
+    isProViaStorage().then((pro) => sendResponse({ pro })).catch(() => sendResponse({ pro: true }));
+    return true;
+  }
+  // job-contacts.js's local-orchestration lane: open the company's people
+  // pages (LinkedIn search, /about) from the background, since content
+  // scripts can't chrome.tabs.create directly under MV3 in all browsers.
+  if (msg.action === "sula:openTabs") {
+    const urls = Array.isArray(msg.urls) ? msg.urls : [];
+    Promise.all(urls.map((url) => chrome.tabs.create({ url }).catch(() => null)))
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (msg.action === "sula:upgrade") {
+    // Fallback path only — license.js (which owns the real CHECKOUT URLs) is
+    // not loaded into this service worker's context, so this never
+    // references its globals directly (that would throw a ReferenceError,
+    // not fail safely). Callers that ARE co-loaded with license.js (any
+    // content script sharing that manifest entry) should call openUpgrade()
+    // directly instead of round-tripping through this message — see
+    // job-contacts.js, which does exactly that.
+    chrome.tabs.create({ url: "https://trysula.com/#pro" }).catch(() => {});
+    sendResponse({ ok: true });
+    return true;
+  }
+  return false; // let other listeners (e.g. updateBadge above) handle their own messages
+});
