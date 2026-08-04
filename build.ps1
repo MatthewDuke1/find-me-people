@@ -18,6 +18,16 @@ $Files = @(
   "popup.html",
   "popup.js",
   "license.js",
+  "job-contacts.js",
+  "email-verify.js",
+  "escalation-registry.js",
+  "advocacy-letters.js",
+  "subscription-guardian.js",
+  "refund-deadline-engine.js",
+  "refund-templates.js",
+  "chargeback-guide.js",
+  "refund-policy-extractor.js",
+  "refund-moment-detector.js",
   "PRIVACY_POLICY.md",
   "README.md"
 )

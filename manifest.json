@@ -38,7 +38,9 @@
       "js": [
         "license.js",
         "content.js",
-        "job-contacts.js"
+        "job-contacts.js",
+        "refund-moment-detector.js",
+        "refund-policy-extractor.js"
       ],
       "run_at": "document_idle"
     }
