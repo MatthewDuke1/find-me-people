@@ -404,6 +404,14 @@
     .pro-msg.err { color: #f87171; }
     .pro-manage { background: none; border: none; color: #71717a; font-size: 11px; cursor: pointer; font-family: inherit; padding: 0; }
     .pro-manage:hover { color: #f87171; }
+    /* Autofill tab */
+    .af-hint,.af-note{font-size:11px;color:#a1a1aa;margin:4px 0 8px;line-height:1.45}
+    .af-note{background:#111113;border:1px solid #1e1e1e;border-radius:8px;padding:8px 10px}
+    .af-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0}
+    .af-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+    .af-field{display:flex;flex-direction:column;gap:2px;font-size:10px;color:#71717a}
+    .af-in{background:#18181b;border:1px solid #27272a;border-radius:6px;color:#fafafa;font-size:12px;padding:6px 9px;outline:none;font-family:inherit}
+    .af-in:focus{border-color:#60a5fa}
   </style>
 </head>
 <body>
@@ -417,6 +425,7 @@
   <div class="view-tabs">
     <button class="view-tab active" data-view="now">On this page</button>
     <button class="view-tab" data-view="history">History</button>
+    <button class="view-tab" data-view="autofill">Autofill</button>
   </div>
 
   <div id="content">
@@ -450,6 +459,7 @@
   <script src="refund-deadline-engine.js"></script>
   <script src="refund-templates.js"></script>
   <script src="chargeback-guide.js"></script>
+  <script src="autofill-ui.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

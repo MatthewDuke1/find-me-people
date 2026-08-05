@@ -824,6 +824,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       const v = tabBtn.dataset.view;
       if (v === "history") renderHistoryView();
       else if (v === "now" && window._lastScanResults) renderResults(window._lastScanResults);
+      else if (v === "autofill" && window.SulaAutofillUI) {
+        window.SulaAutofillUI.render(contentEl, { tab });
+      }
     });
   });
 

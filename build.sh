@@ -25,6 +25,8 @@ FILES=(
   refund-deadline-engine.js
   refund-templates.js
   chargeback-guide.js
+  autofill.js
+  autofill-ui.js
   refund-policy-extractor.js
   refund-moment-detector.js
   icons
