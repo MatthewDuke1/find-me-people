@@ -101,4 +101,16 @@
 
   const api = { POLICY_KEYWORDS, classifyPolicyText, findPolicyWindow, summarizePolicy, findPolicyOnPage };
   if (typeof window !== "undefined") window.SulaRefundPolicy = api;
+
+  // Let the popup request the on-page policy read (this runs in the content
+  // script's DOM context; the popup can't reach the page directly).
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      if (msg && msg.action === "sula:getPolicy") {
+        try { sendResponse({ policies: findPolicyOnPage() }); } catch (_) { sendResponse({ policies: [] }); }
+        return true;
+      }
+      return false;
+    });
+  }
 })();

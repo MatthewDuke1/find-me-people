@@ -63,6 +63,32 @@
     });
   }
 
+  // On-page nudge: when the current page is an order/subscription page, show a
+  // small dismissible prompt pointing to Sula's Advocacy tab. This is the
+  // visible surface for the detector (content scripts can't open the popup, so
+  // it nudges the user to click the icon). Fires once per page, auto-dismisses.
+  function showMomentPrompt() {
+    if (typeof document === "undefined") return;
+    const r = detectMoment();
+    if (r.moment === "none") return;
+    if (document.getElementById("sula-refund-nudge")) return;
+    const nHost = document.createElement("div");
+    nHost.id = "sula-refund-nudge";
+    nHost.style.cssText = "position:fixed;z-index:2147483646;right:16px;bottom:16px;";
+    const root = nHost.attachShadow({ mode: "open" });
+    const what = r.moment === "subscription" ? "manage or cancel this subscription" : "get a refund on this order";
+    root.innerHTML =
+      '<style>.c{font:13px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;background:#111827;color:#f9fafb;' +
+      'border:1px solid #374151;border-radius:12px;padding:11px 13px;max-width:250px;box-shadow:0 8px 24px rgba(0,0,0,.35)}' +
+      '.x{background:transparent;border:0;color:#9ca3af;font:inherit;cursor:pointer;margin-top:8px}</style>' +
+      '<div class="c">Sula can help you ' + what + '. Click the Sula icon → <strong>Advocacy</strong>.' +
+      '<div><button class="x">Dismiss</button></div></div>';
+    root.querySelector(".x").addEventListener("click", () => nHost.remove());
+    (document.body || document.documentElement).appendChild(nHost);
+    setTimeout(() => { if (nHost.isConnected) nHost.remove(); }, 15000);
+  }
+  if (typeof document !== "undefined") setTimeout(showMomentPrompt, 1200);
+
   const api = { classifyPage, detectMoment, URL_SIGNALS, TEXT_SIGNALS };
   if (typeof window !== "undefined") window.SulaRefundMoment = api;
 })();
