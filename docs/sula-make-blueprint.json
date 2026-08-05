@@ -1,0 +1,96 @@
+{
+  "name": "Sula → CRM (contacts)",
+  "flow": [
+    {
+      "id": 1,
+      "module": "gateway:CustomWebHook",
+      "version": 1,
+      "parameters": { "hook": null, "maxResults": 1 },
+      "mapper": {},
+      "metadata": {
+        "designer": { "x": 0, "y": 0 },
+        "restore": {},
+        "expect": [
+          { "name": "source", "type": "text" },
+          { "name": "hostname", "type": "text" },
+          { "name": "exportedAt", "type": "text" },
+          { "name": "count", "type": "number" },
+          {
+            "name": "contacts",
+            "type": "array",
+            "spec": [
+              { "name": "type", "type": "text" },
+              { "name": "value", "type": "text" },
+              { "name": "score", "type": "number" },
+              { "name": "confidence", "type": "text" },
+              { "name": "hostname", "type": "text" },
+              { "name": "foundAt", "type": "text" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "module": "builtin:BasicRouter",
+      "version": 1,
+      "mapper": null,
+      "routes": [
+        {
+          "flow": [
+            {
+              "id": 3,
+              "module": "util:Iterator",
+              "version": 1,
+              "parameters": {},
+              "mapper": { "array": "{{1.contacts}}" },
+              "metadata": { "designer": { "x": 300, "y": 0 } }
+            },
+            {
+              "id": 4,
+              "module": "__PLACEHOLDER__:CreateRecord",
+              "version": 1,
+              "parameters": {},
+              "mapper": {
+                "__comment": "Replace this module with your CRM's Create/Update Record action (Airtable, HubSpot, Pipedrive, Google Sheets, Notion, etc). Map fields from the Iterator (module 3) below.",
+                "email_or_phone": "{{3.value}}",
+                "type": "{{3.type}}",
+                "confidence": "{{3.confidence}}",
+                "source_url": "{{1.hostname}}",
+                "found_at": "{{1.exportedAt}}",
+                "lead_source": "Sula"
+              },
+              "metadata": {
+                "designer": { "x": 600, "y": 0 },
+                "restore": {},
+                "note": "PLACEHOLDER MODULE — swap for your CRM's native Make app before running."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "instant": true,
+    "version": 1,
+    "scenario": {
+      "roundtrips": 1,
+      "maxErrors": 3,
+      "autoCommit": true,
+      "autoCommitTriggerLast": true,
+      "sequential": false,
+      "confidential": false,
+      "dataloss": false,
+      "dlq": false
+    },
+    "designer": { "orphans": [] },
+    "zone": "us1.make.com",
+    "notes": [
+      "Import via Make -> Create a new scenario -> ... -> Import Blueprint.",
+      "Module 1 (Custom Webhook): copy the generated URL into Sula's Save-to-CRM field, then click Send once to give Make a sample payload for field detection.",
+      "Module 3 (Iterator): fans out contacts[] to one bundle per contact — required because one Sula POST can carry multiple contacts.",
+      "Module 4 is a PLACEHOLDER. Delete it and add your CRM's real 'Create a Record' module (Airtable / HubSpot / Pipedrive / Google Sheets / Notion / etc.), then remap the fields shown in the placeholder's comment."
+    ]
+  }
+}
