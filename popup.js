@@ -828,6 +828,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         let ph = ""; try { ph = new URL(tab.url).hostname; } catch (_) {}
         window.SulaAdvocacyUI.render(contentEl, { tab, pageHost: ph });
       }
+      else if (v === "autofill" && window.SulaAutofillUI) {
+        window.SulaAutofillUI.render(contentEl, { tab });
+      }
     });
   });
 

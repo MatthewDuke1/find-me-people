@@ -40,7 +40,8 @@
         "content.js",
         "job-contacts.js",
         "refund-moment-detector.js",
-        "refund-policy-extractor.js"
+        "refund-policy-extractor.js",
+        "autofill.js"
       ],
       "run_at": "document_idle"
     }

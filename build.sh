@@ -26,6 +26,8 @@ FILES=(
   refund-templates.js
   chargeback-guide.js
   advocacy-ui.js
+  autofill.js
+  autofill-ui.js
   refund-policy-extractor.js
   refund-moment-detector.js
   icons
