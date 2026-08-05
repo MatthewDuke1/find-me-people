@@ -28,7 +28,7 @@ const CHECKOUT = {
   lifetime: "https://sula.lemonsqueezy.com/checkout/buy/1f26fe80-e487-4305-9593-5301dd0279cb",
 };
 // Which checkout the "Upgrade to Pro" button opens by default.
-const DEFAULT_CHECKOUT = CHECKOUT.lifetime;
+const DEFAULT_CHECKOUT = CHECKOUT.monthly;
 
 function _lcGet(key) {
   return new Promise((res) => {
