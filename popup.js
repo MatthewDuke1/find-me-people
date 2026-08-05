@@ -824,6 +824,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       const v = tabBtn.dataset.view;
       if (v === "history") renderHistoryView();
       else if (v === "now" && window._lastScanResults) renderResults(window._lastScanResults);
+      else if (v === "advocacy" && window.SulaAdvocacyUI) {
+        let ph = ""; try { ph = new URL(tab.url).hostname; } catch (_) {}
+        window.SulaAdvocacyUI.render(contentEl, { tab, pageHost: ph });
+      }
+      else if (v === "autofill" && window.SulaAutofillUI) {
+        window.SulaAutofillUI.render(contentEl, { tab });
+      }
     });
   });
 
