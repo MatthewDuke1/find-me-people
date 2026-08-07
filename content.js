@@ -3861,6 +3861,65 @@
     } catch (_) {}
   }
 
+  // ----- Autofill: side-panel parity with the popup's Autofill tab -----
+  // The panel runs in the content-script world alongside autofill.js, so it
+  // calls window.SulaAutofill directly instead of messaging a tab.
+  const SP_AUTOFILL_KEY = "sula_autofill_profile";
+  const SP_AF_FIELDS = [
+    ["firstName", "First name"], ["lastName", "Last name"],
+    ["email", "Email"], ["phone", "Phone"],
+    ["linkedin", "LinkedIn URL"], ["github", "GitHub"], ["website", "Website / portfolio"],
+    ["addressLine1", "Street address"], ["city", "City"], ["state", "State"],
+    ["zip", "Zip / postal"], ["country", "Country"],
+    ["currentCompany", "Current company"], ["currentTitle", "Current title"],
+    ["yearsExperience", "Years of experience"], ["location", "Location"],
+  ];
+
+  function spGetAutofillProfile() {
+    if (!chrome.storage || !chrome.storage.local) return Promise.resolve({});
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get([SP_AUTOFILL_KEY], (r) => resolve(r[SP_AUTOFILL_KEY] || {}));
+      } catch (_) { resolve({}); }
+    });
+  }
+
+  function spSetAutofillProfile(profile) {
+    if (!chrome.storage || !chrome.storage.local) return;
+    try { chrome.storage.local.set({ [SP_AUTOFILL_KEY]: profile }); } catch (_) {}
+  }
+
+  // Count profile-mapped fillable fields on the page. Used to decide whether
+  // to surface the panel on a form page that has no contacts of its own.
+  function spCountFillableFields() {
+    try {
+      if (window.SulaAutofill && typeof window.SulaAutofill.scanFields === "function") {
+        return window.SulaAutofill.scanFields().length;
+      }
+    } catch (_) {}
+    return 0;
+  }
+
+  function spRenderAutofillView(profile) {
+    const p = profile || {};
+    const rows = SP_AF_FIELDS.map(([k, label]) =>
+      `<label class="sp-af-field"><span>${spEscape(label)}</span>` +
+      `<input class="sp-af-in" data-sp-af-input="${k}" value="${spEscape(p[k] || "")}" /></label>`
+    ).join("");
+    return `
+      <div class="scroll sp-af-scroll">
+        <div class="sp-af-hint">Save your details once, then fill any application or contact form on this page in one click. Stored locally &mdash; never leaves your browser. Review highlighted fields before submitting; Sula never auto-submits.</div>
+        <div class="sp-af-actions">
+          <button class="sp-af-btn primary" data-sp-af="fill">Fill this page</button>
+          <button class="sp-af-btn" data-sp-af="preview">Preview fields</button>
+        </div>
+        <div class="sp-af-result" data-sp-af-result hidden></div>
+        <div class="section-title" style="margin-top:14px">Your details</div>
+        <div class="sp-af-grid">${rows}</div>
+        <div class="sp-af-actions"><button class="sp-af-btn" data-sp-af="save">Save details</button><span class="sp-af-saved" data-sp-af-saved></span></div>
+      </div>`;
+  }
+
   // ===================================================================
   // SIDE PANEL OVERLAY
   // Injects a small green tab on the right edge of every page that
@@ -4427,17 +4486,19 @@
     return "Low confidence. Worth checking before you rely on it.";
   }
 
-  function spBuildBody(currentResults, currentClient, history) {
+  function spBuildBody(currentResults, currentClient, history, profile) {
     const total = currentResults.emails.length + currentResults.phones.length;
     const totalSuffix = total === 1 ? "" : "s";
     const tabsHtml = `
       <div class="view-tabs">
         <button class="view-tab${spActiveView === "now" ? " active" : ""}" data-sp-view="now">On this page</button>
         <button class="view-tab${spActiveView === "history" ? " active" : ""}" data-sp-view="history">History</button>
+        <button class="view-tab${spActiveView === "autofill" ? " active" : ""}" data-sp-view="autofill">Autofill</button>
       </div>`;
 
+    const tabTitle = total > 0 ? `Sula (${total} contact${totalSuffix})` : "Sula";
     let html = `
-      <div class="tab" data-sp-action="expand" role="button" aria-label="Open Sula panel" title="Sula (${total} contact${totalSuffix})">
+      <div class="tab" data-sp-action="expand" role="button" aria-label="Open Sula panel" title="${tabTitle}">
         <img class="tab-icon" src="${SP_ICON}" alt="" />
         ${total > 0 ? `<span class="tab-count">${total}</span>` : ""}
       </div>
@@ -4452,6 +4513,9 @@
     // ----- "History" view: searchable list of every previous copy -----
     if (spActiveView === "history") {
       html += `<div class="scroll history-scroll">${spRenderHistoryView(history || [], spHistoryFilter)}</div>`;
+    } else if (spActiveView === "autofill") {
+      // ----- "Autofill" view: profile editor + one-click fill-this-page -----
+      html += spRenderAutofillView(profile || {});
     } else {
       // ----- "On this page" view: hours banner + email + phone + support -----
       html += `<div class="status">${total > 0 ? `Found ${total} contact${totalSuffix} on this page` : "No contacts found"}</div>`;
@@ -4894,6 +4958,30 @@
     .view-tab:hover { color: #fafafa; }
     .view-tab.active { color: #60a5fa; border-bottom-color: #60a5fa; }
 
+    /* ----- Autofill view ----- */
+    .sp-af-scroll { padding: 12px 12px 16px; }
+    .sp-af-hint { font-size: 11px; line-height: 1.5; color: #9aa4b2; margin-bottom: 10px; }
+    .sp-af-actions { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+    .sp-af-btn {
+      font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+      padding: 7px 12px; border-radius: 7px; border: 1px solid #2a3852;
+      background: #141c2b; color: #e6edf6;
+    }
+    .sp-af-btn:hover { border-color: #3a4c6b; }
+    .sp-af-btn.primary { background: #60a5fa; color: #071022; border-color: #60a5fa; }
+    .sp-af-btn.primary:hover { background: #93c5fd; }
+    .sp-af-result { font-size: 11px; line-height: 1.5; color: #cdd6e2; background: #0c1322; border: 1px solid #1f2d47; border-radius: 7px; padding: 8px 10px; margin: 4px 0 2px; }
+    .sp-af-saved { font-size: 11px; color: #7fd18b; }
+    .sp-af-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+    .sp-af-field { display: flex; flex-direction: column; gap: 3px; font-size: 10px; color: #9aa4b2; }
+    .sp-af-field span { padding-left: 1px; }
+    .sp-af-in {
+      font: inherit; font-size: 12px; color: #e6edf6;
+      background: #0c1322; border: 1px solid #1f2d47; border-radius: 6px;
+      padding: 6px 7px; width: 100%; box-sizing: border-box;
+    }
+    .sp-af-in:focus { outline: none; border-color: #60a5fa; }
+
     /* ----- Hours banner + weekly list ----- */
     .hours-banner {
       margin: 8px 14px 6px; padding: 9px 12px;
@@ -5066,6 +5154,57 @@
           if (v === "now") spHistoryFilter = ""; // reset search when leaving history
           ensureSidePanel(results);
         }
+      });
+    });
+
+    // ----- Autofill view: fill / preview / save. Runs in the content-script
+    // world, so it calls window.SulaAutofill directly (no tab round-trip). -----
+    const spAfCollect = () => {
+      const p = {};
+      shadow.querySelectorAll("[data-sp-af-input]").forEach((i) => {
+        const v = (i.value || "").trim();
+        if (v) p[i.getAttribute("data-sp-af-input")] = v;
+      });
+      return p;
+    };
+    const spAfResult = (msg) => {
+      const box = shadow.querySelector("[data-sp-af-result]");
+      if (box) { box.hidden = false; box.textContent = msg; }
+    };
+    const spAfReady = () =>
+      window.SulaAutofill && typeof window.SulaAutofill.autofill === "function";
+
+    shadow.querySelectorAll('[data-sp-af="save"]').forEach((el) => {
+      el.addEventListener("click", () => {
+        spSetAutofillProfile(spAfCollect());
+        const s = shadow.querySelector("[data-sp-af-saved]");
+        if (s) { s.textContent = "Saved ✓"; setTimeout(() => { s.textContent = ""; }, 1500); }
+      });
+    });
+
+    shadow.querySelectorAll('[data-sp-af="fill"]').forEach((el) => {
+      el.addEventListener("click", () => {
+        const profile = spAfCollect();
+        spSetAutofillProfile(profile); // fill with the latest edits, saved or not
+        if (!spAfReady()) { spAfResult("Autofill isn't ready on this page yet. Reload and try again."); return; }
+        try {
+          const res = window.SulaAutofill.autofill(profile) || {};
+          spAfResult(typeof res.filled === "number"
+            ? `Filled ${res.filled} of ${res.detected} recognized field${res.detected === 1 ? "" : "s"}. Review the highlighted fields before submitting.`
+            : "Couldn't fill this page.");
+        } catch (_) { spAfResult("Couldn't fill this page."); }
+      });
+    });
+
+    shadow.querySelectorAll('[data-sp-af="preview"]').forEach((el) => {
+      el.addEventListener("click", () => {
+        if (!spAfReady()) { spAfResult("Autofill isn't ready on this page yet. Reload and try again."); return; }
+        try {
+          const keys = window.SulaAutofill.preview() || [];
+          spAfResult(keys.length
+            ? `Recognized ${keys.length} field${keys.length === 1 ? "" : "s"}: ${[...new Set(keys)].join(", ")}`
+            : "No fillable fields recognized on this page.");
+        } catch (_) { spAfResult("Couldn't scan this page."); }
       });
     });
 
@@ -5242,18 +5381,13 @@
       (currentResults.emails || []).length +
       (currentResults.phones || []).length;
 
-    if (total === 0) {
-      const existing = document.getElementById(SP_HOST_ID);
-      if (existing) existing.remove();
-      return;
-    }
-
-    const [masterOn, dismissed, currentClient, history, storedTabTop] = await Promise.all([
+    let [masterOn, dismissed, currentClient, history, storedTabTop, profile] = await Promise.all([
       spGetMaster(),
       spIsDismissedForDomain(),
       spGetClient(),
       spGetHistoryFromStorage(),
       spGetTabTop(),
+      spGetAutofillProfile(),
     ]);
 
     if (!masterOn || dismissed) {
@@ -5261,6 +5395,24 @@
       if (existing) existing.remove();
       return;
     }
+
+    // Visibility: the panel normally rides on found contacts. But Autofill is
+    // most useful on application/contact forms, which often have no contacts of
+    // their own. So if the user has set an autofill profile and the page has a
+    // real fillable form (>= 2 profile-mapped fields), surface the panel for it.
+    const profileSet = profile && Object.keys(profile).length > 0;
+    let formOnly = false;
+    if (total === 0) {
+      if (profileSet && spCountFillableFields() >= 2) {
+        formOnly = true;
+      } else {
+        const existing = document.getElementById(SP_HOST_ID);
+        if (existing) existing.remove();
+        return;
+      }
+    }
+    // On a form-only page the "On this page" view is empty, so open on Autofill.
+    if (formOnly && spActiveView === "now") spActiveView = "autofill";
 
     // Capture state we want to survive a re-render: panel expand, any
     // per-row Compose/Call toggles the user has currently open, and the
@@ -5277,6 +5429,14 @@
       });
       const priorScroll = prior.shadowRoot.querySelector(".scroll");
       if (priorScroll) priorScrollTop = priorScroll.scrollTop;
+      // Preserve any unsaved edits in the Autofill profile editor so an
+      // auto-rescan rebuild (common on live form pages) doesn't wipe typing.
+      const priorAf = prior.shadowRoot.querySelectorAll("[data-sp-af-input]");
+      if (priorAf.length) {
+        const edits = {};
+        priorAf.forEach((i) => { const v = (i.value || "").trim(); if (v) edits[i.getAttribute("data-sp-af-input")] = v; });
+        profile = Object.assign({}, profile, edits);
+      }
     }
 
     let host = prior;
@@ -5288,7 +5448,7 @@
       style.textContent = SP_CSS;
       shadow.appendChild(style);
       const container = document.createElement("div");
-      container.innerHTML = spBuildBody(currentResults, currentClient, history);
+      container.innerHTML = spBuildBody(currentResults, currentClient, history, profile);
       while (container.firstChild) shadow.appendChild(container.firstChild);
       document.documentElement.appendChild(host);
       // Apply user-dragged position (if any) on first mount only -- after
@@ -5304,7 +5464,7 @@
       while (shadow.firstChild) shadow.removeChild(shadow.firstChild);
       if (style) shadow.appendChild(style);
       const container = document.createElement("div");
-      container.innerHTML = spBuildBody(currentResults, currentClient, history);
+      container.innerHTML = spBuildBody(currentResults, currentClient, history, profile);
       while (container.firstChild) shadow.appendChild(container.firstChild);
       if (wasExpanded) host.classList.add("expanded");
       // Restore previously-open Compose/Call panels
