@@ -5174,6 +5174,38 @@
     const spAfReady = () =>
       window.SulaAutofill && typeof window.SulaAutofill.autofill === "function";
 
+    // ATS forms (iCIMS, Workday, Greenhouse embeds) render inside iframes, and
+    // a content script only sees its own frame. Ask the background to run the
+    // call in every frame of this tab and sum the per-frame tallies. Falls back
+    // to this frame alone if the background is unreachable.
+    const spAfRunAllFrames = (mode, profile) =>
+      new Promise((resolve) => {
+        let settled = false;
+        const fallback = () => {
+          if (settled) return;
+          settled = true;
+          try {
+            resolve([mode === "fill"
+              ? window.SulaAutofill.autofill(profile)
+              : { keys: window.SulaAutofill.preview() }]);
+          } catch (_) { resolve([]); }
+        };
+        try {
+          chrome.runtime.sendMessage(
+            { action: "sula:autofillAllFrames", mode, profile: profile || null },
+            (res) => {
+              if (settled) return;
+              if (chrome.runtime.lastError || !res || !Array.isArray(res.parts) || !res.parts.length) {
+                fallback();
+                return;
+              }
+              settled = true;
+              resolve(res.parts);
+            }
+          );
+        } catch (_) { fallback(); }
+      });
+
     shadow.querySelectorAll('[data-sp-af="save"]').forEach((el) => {
       el.addEventListener("click", () => {
         spSetAutofillProfile(spAfCollect());
@@ -5183,24 +5215,29 @@
     });
 
     shadow.querySelectorAll('[data-sp-af="fill"]').forEach((el) => {
-      el.addEventListener("click", () => {
+      el.addEventListener("click", async () => {
         const profile = spAfCollect();
         spSetAutofillProfile(profile); // fill with the latest edits, saved or not
         if (!spAfReady()) { spAfResult("Autofill isn't ready on this page yet. Reload and try again."); return; }
+        spAfResult("Filling…");
         try {
-          const res = window.SulaAutofill.autofill(profile) || {};
-          spAfResult(typeof res.filled === "number"
-            ? `Filled ${res.filled} of ${res.detected} recognized field${res.detected === 1 ? "" : "s"}. Review the highlighted fields before submitting.`
-            : "Couldn't fill this page.");
+          const parts = await spAfRunAllFrames("fill", profile);
+          const filled = parts.reduce((n, r) => n + ((r && r.filled) || 0), 0);
+          const detected = parts.reduce((n, r) => n + ((r && r.detected) || 0), 0);
+          spAfResult(detected === 0
+            ? "No fillable fields recognized on this page."
+            : `Filled ${filled} of ${detected} recognized field${detected === 1 ? "" : "s"}. Review the highlighted fields before submitting.`);
         } catch (_) { spAfResult("Couldn't fill this page."); }
       });
     });
 
     shadow.querySelectorAll('[data-sp-af="preview"]').forEach((el) => {
-      el.addEventListener("click", () => {
+      el.addEventListener("click", async () => {
         if (!spAfReady()) { spAfResult("Autofill isn't ready on this page yet. Reload and try again."); return; }
+        spAfResult("Scanning…");
         try {
-          const keys = window.SulaAutofill.preview() || [];
+          const parts = await spAfRunAllFrames("preview");
+          const keys = parts.flatMap((r) => (r && r.keys) || []);
           spAfResult(keys.length
             ? `Recognized ${keys.length} field${keys.length === 1 ? "" : "s"}: ${[...new Set(keys)].join(", ")}`
             : "No fillable fields recognized on this page.");
