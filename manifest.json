@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sula - Find People Quickly",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Finds the emails and phone numbers already on the page you're reading. Ranked, one click, 100% local. No account, no tracking.",
   "permissions": [
     "activeTab",
@@ -40,9 +40,19 @@
         "content.js",
         "job-contacts.js",
         "refund-moment-detector.js",
-        "refund-policy-extractor.js",
+        "refund-policy-extractor.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
         "autofill.js"
       ],
+      "all_frames": true,
+      "match_about_blank": true,
       "run_at": "document_idle"
     }
   ],

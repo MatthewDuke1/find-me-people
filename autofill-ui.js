@@ -62,22 +62,58 @@
       setTimeout(() => (s.textContent = ""), 1500);
     });
 
+    // Applicant-tracking systems (iCIMS, Workday, Greenhouse/Lever embeds) put
+    // the real form inside an iframe, often cross-origin. A plain
+    // tabs.sendMessage only reaches the TOP frame, so it would report 0 fields
+    // on exactly the pages that matter. Fan the message out to every frame and
+    // sum the replies; frames without the script simply reject and are ignored.
+    // Uses chrome.scripting with allFrames (the "scripting" permission we
+    // already hold — no new permission, so no extra store-review surface).
+    // Each frame runs the call against its own window.SulaAutofill and returns
+    // its own tally; frames where the script didn't load return null.
+    async function runInAllFrames(fnName, arg) {
+      try {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: tab.id, allFrames: true },
+          args: [fnName, arg === undefined ? null : arg],
+          func: (name, payload) => {
+            try {
+              const api = window.SulaAutofill;
+              if (!api || typeof api[name] !== "function") return null;
+              return name === "autofill"
+                ? api.autofill(payload)
+                : { keys: api.preview() };
+            } catch (_) { return null; }
+          },
+        });
+        return (results || []).map((r) => r && r.result).filter(Boolean);
+      } catch (_) {
+        return [];
+      }
+    }
+
     contentEl.querySelector("#af-fill").addEventListener("click", async () => {
       const box = contentEl.querySelector("#af-result"); box.hidden = false; box.textContent = "Filling…";
       await lcSet({ [PROFILE_KEY]: collect() }); // fill with the latest edits, saved or not
       try {
-        const res = await chrome.tabs.sendMessage(tab.id, { action: "sula:autofill", profile: collect() });
-        box.textContent = res && typeof res.filled === "number"
-          ? `Filled ${res.filled} of ${res.detected} recognized field${res.detected === 1 ? "" : "s"}. Review the highlighted fields before submitting.`
-          : "Couldn't reach this page — open Autofill while on the form.";
+        const parts = await runInAllFrames("autofill", collect());
+        if (!parts.length) {
+          box.textContent = "Couldn't reach this page — open Autofill while on the form (some pages block extensions).";
+          return;
+        }
+        const filled = parts.reduce((n, r) => n + (r.filled || 0), 0);
+        const detected = parts.reduce((n, r) => n + (r.detected || 0), 0);
+        box.textContent = detected === 0
+          ? "No fillable fields recognized on this page."
+          : `Filled ${filled} of ${detected} recognized field${detected === 1 ? "" : "s"}. Review the highlighted fields before submitting.`;
       } catch (_) { box.textContent = "Couldn't reach this page — open Autofill while on the form (some pages block extensions)."; }
     });
 
     contentEl.querySelector("#af-preview").addEventListener("click", async () => {
       const box = contentEl.querySelector("#af-result"); box.hidden = false; box.textContent = "Scanning…";
       try {
-        const res = await chrome.tabs.sendMessage(tab.id, { action: "sula:autofillPreview" });
-        const keys = (res && res.keys) || [];
+        const parts = await runInAllFrames("preview");
+        const keys = parts.flatMap((r) => r.keys || []);
         box.textContent = keys.length
           ? `Recognized ${keys.length} field${keys.length === 1 ? "" : "s"}: ${[...new Set(keys)].join(", ")}`
           : "No fillable fields recognized on this page.";

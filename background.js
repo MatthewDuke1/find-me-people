@@ -160,6 +160,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     isProViaStorage().then((pro) => sendResponse({ pro })).catch(() => sendResponse({ pro: true }));
     return true;
   }
+  // Autofill fan-out for the side panel. A content script can't call
+  // chrome.scripting itself, and ATS forms (iCIMS, Workday) live in iframes,
+  // so the panel asks the background to run the call in EVERY frame of its tab
+  // and returns the summed tally.
+  if (msg.action === "sula:autofillAllFrames") {
+    const tabId = sender && sender.tab && sender.tab.id;
+    if (tabId == null) { sendResponse({ parts: [] }); return true; }
+    chrome.scripting
+      .executeScript({
+        target: { tabId, allFrames: true },
+        args: [msg.mode === "fill" ? "autofill" : "preview", msg.profile || null],
+        func: (name, payload) => {
+          try {
+            const api = window.SulaAutofill;
+            if (!api || typeof api[name] !== "function") return null;
+            return name === "autofill" ? api.autofill(payload) : { keys: api.preview() };
+          } catch (_) { return null; }
+        },
+      })
+      .then((results) => sendResponse({ parts: (results || []).map((r) => r && r.result).filter(Boolean) }))
+      .catch(() => sendResponse({ parts: [] }));
+    return true;
+  }
   // job-contacts.js's local-orchestration lane: open the company's people
   // pages (LinkedIn search, /about) from the background, since content
   // scripts can't chrome.tabs.create directly under MV3 in all browsers.

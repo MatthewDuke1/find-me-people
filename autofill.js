@@ -103,9 +103,25 @@
     if (ll) return ll.textContent || "";
     const alb = el.getAttribute && el.getAttribute("aria-labelledby");
     if (alb) {
-      const ref = document.getElementById(alb);
+      // Resolve within the element's own root (iframe document or shadow root),
+      // not the top document — otherwise cross-root lookups silently miss.
+      let ref = null;
+      try {
+        const root = el.getRootNode ? el.getRootNode() : document;
+        ref = root && root.getElementById ? root.getElementById(alb)
+          : (el.ownerDocument || document).getElementById(alb);
+      } catch (_) {}
       if (ref) return ref.textContent || "";
     }
+    // Last resort: some ATS markup puts the visible label in a preceding
+    // sibling/ancestor cell rather than a <label> (iCIMS, Workday do this).
+    try {
+      const wrap = el.closest("div, td, li, fieldset");
+      if (wrap) {
+        const txt = (wrap.textContent || "").trim();
+        if (txt && txt.length <= 120) return txt;
+      }
+    } catch (_) {}
     return "";
   }
 
@@ -121,17 +137,68 @@
     };
   }
 
+  // Skip types we never fill: hidden/password/file are policy, the rest are
+  // controls rather than text entry.
+  const SKIP_TYPES = new Set(["hidden", "password", "file", "submit", "button", "checkbox", "radio", "image", "reset"]);
+
+  // Collect candidate elements from a root, descending into open shadow roots
+  // and same-origin iframes. ATS pages (Greenhouse, Lever, iCIMS, Workday)
+  // routinely nest the real form one or two documents deep, so a flat
+  // document.querySelectorAll finds nothing at all.
+  function collectCandidates(root, depth, seenDocs) {
+    const out = [];
+    if (!root || depth > 4) return out;
+    let els;
+    try { els = root.querySelectorAll("input, textarea, select"); } catch (_) { return out; }
+    els.forEach((el) => out.push(el));
+
+    // Open shadow roots (web-component based forms).
+    try {
+      root.querySelectorAll("*").forEach((el) => {
+        if (el.shadowRoot) out.push(...collectCandidates(el.shadowRoot, depth + 1, seenDocs));
+      });
+    } catch (_) {}
+
+    // Same-origin iframes. Cross-origin frames throw on contentDocument access
+    // — those are handled by running this script in every frame (all_frames),
+    // where each frame scans itself and the popup aggregates the results.
+    try {
+      root.querySelectorAll("iframe, frame").forEach((fr) => {
+        let doc = null;
+        try { doc = fr.contentDocument; } catch (_) { doc = null; }
+        if (doc && !seenDocs.has(doc)) {
+          seenDocs.add(doc);
+          out.push(...collectCandidates(doc, depth + 1, seenDocs));
+        }
+      });
+    } catch (_) {}
+    return out;
+  }
+
+  function isFillable(el) {
+    const t = (el.getAttribute("type") || "").toLowerCase();
+    if (SKIP_TYPES.has(t)) return false;
+    if (el.disabled || el.readOnly) return false;
+    // Skip fields the user can't see (collapsed steps, hidden wizard panes).
+    try {
+      if (el.offsetParent === null && el.getClientRects().length === 0) return false;
+    } catch (_) {}
+    return true;
+  }
+
   function scanFields() {
     if (typeof document === "undefined") return [];
     const out = [];
-    document.querySelectorAll("input, textarea, select").forEach((el) => {
-      const t = (el.getAttribute("type") || "").toLowerCase();
-      if (t === "hidden" || t === "password" || t === "file" || t === "submit" || t === "button" || t === "checkbox" || t === "radio") return;
-      if (el.disabled || el.readOnly) return;
+    const seen = new Set();
+    const candidates = collectCandidates(document, 0, new Set([document]));
+    for (const el of candidates) {
+      if (seen.has(el)) continue;
+      seen.add(el);
+      if (!isFillable(el)) continue;
       const meta = fieldMeta(el);
       const key = classifyField(meta);
       if (key) out.push({ el, key, meta });
-    });
+    }
     return out;
   }
 
@@ -182,9 +249,18 @@
   }
 
   if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
+    // This script runs in EVERY frame (manifest all_frames). Each frame answers
+    // for itself and the caller sums the per-frame replies, so a form inside a
+    // cross-origin iframe (iCIMS, Workday, Greenhouse embeds) still gets filled.
     chrome.runtime.onMessage.addListener((msg, _s, send) => {
-      if (msg && msg.action === "sula:autofill") { try { send(autofill(msg.profile)); } catch (_) { send({ detected: 0, filled: 0 }); } return true; }
-      if (msg && msg.action === "sula:autofillPreview") { try { send({ keys: preview() }); } catch (_) { send({ keys: [] }); } return true; }
+      if (msg && msg.action === "sula:autofill") {
+        try { send(autofill(msg.profile)); } catch (_) { send({ detected: 0, filled: 0, keys: [] }); }
+        return true;
+      }
+      if (msg && msg.action === "sula:autofillPreview") {
+        try { send({ keys: preview() }); } catch (_) { send({ keys: [] }); }
+        return true;
+      }
       return false;
     });
   }
