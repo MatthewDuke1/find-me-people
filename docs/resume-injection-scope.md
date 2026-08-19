@@ -66,8 +66,18 @@ Storage: `sula_resume_text`, local only, same handling as the autofill profile.
 It never leaves the browser, and the privacy policy's autofill paragraph covers
 it with a one-line addition.
 
-Free vs Pro: the match score and the covered/missing lists are a good free hook.
-The per-term host bullet and rewrite guidance are the Pro half.
+Free vs Pro (decided): the match score and the covered/missing lists are free.
+The per-term host bullet and rewrite guidance are Pro.
+
+The split is deliberate about where the paywall sits. A free user runs a real
+scan and sees a real result — their score, everything the posting asks for that
+they already cover, and every gap. What Pro buys is the actionable half: which
+of their own bullets to rewrite for each gap. Gating the scan itself would put
+the wall before any proof the tool works, which reads as a nag rather than an
+offer.
+
+Autofill stays free. It is the acquisition hook; resume analysis is the thing
+worth paying for.
 
 ## The "give them the new resume altogether" option
 

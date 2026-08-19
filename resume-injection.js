@@ -129,17 +129,31 @@
   // Score how well a bullet could host a term: prefer bullets that already
   // share vocabulary with the posting, so the rewrite stays truthful and close
   // to what the user actually did.
-  function bestHostBullet(term, bullets, keywords) {
+  // `used` is an optional Map of bullet -> how many gaps already point at it,
+  // so a caller building several suggestions can spread them across the resume.
+  function bestHostBullet(term, bullets, keywords, used) {
     const words = new Set(
       (keywords || []).map((k) => norm(k.term)).filter((w) => w.length > 3)
     );
     let best = null, bestScore = -1;
+    // Topic words from the term itself. A gap for "a/b testing" belongs on the
+    // bullet about experiments, not on whichever bullet happens to share the
+    // most generic posting vocabulary -- that was picking one global winner and
+    // hanging every single gap off it.
+    const termWords = norm(term).split(/[^a-z0-9+#]+/).filter((w) => w.length > 2);
+
     for (const b of bullets || []) {
       const nb = norm(b);
       let score = 0;
+      // Direct topical affinity dominates.
+      for (const w of termWords) if (nb.includes(w)) score += 6;
+      // Then general overlap with the posting's language.
       for (const w of words) if (nb.includes(w)) score++;
       // A shorter bullet has more room to absorb a phrase.
       score += Math.max(0, 3 - Math.floor(nb.length / 90));
+      // Penalise a bullet already carrying suggestions so the gaps spread out
+      // instead of stacking on one line the user then has to rewrite eight ways.
+      score -= (used && used.get(b)) ? (used.get(b) * 4) : 0;
       if (score > bestScore) { bestScore = score; best = b; }
     }
     return best;
@@ -153,8 +167,11 @@
     const cov = coverage(keywords, resumeText);
     const bullets = resumeBullets(resumeText);
 
+    // Track how many gaps already point at each bullet so they spread out.
+    const used = new Map();
     const suggestions = cov.missing.slice(0, o.maxSuggestions || 8).map((k) => {
-      const host = bestHostBullet(k.term, bullets, keywords);
+      const host = bestHostBullet(k.term, bullets, keywords, used);
+      if (host) used.set(host, (used.get(host) || 0) + 1);
       return {
         term: k.term,
         weight: k.weight,
