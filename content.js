@@ -3593,6 +3593,11 @@
   // Run scan and store results
   const results = scanPage();
 
+  // Published for autofill-page-button.js, which only offers to fill a form on
+  // a page where the contact scan came up empty (otherwise the side panel is
+  // already there and the button would be redundant). Read-only by convention.
+  try { window.__sulaResults = results; } catch (_) {}
+
   // Hydrate from cache (background -- doesn't block the synchronous
   // scanPage above). When the cached entry is fresh (TTL not expired)
   // and the live scan didn't already find the same items, the cached
