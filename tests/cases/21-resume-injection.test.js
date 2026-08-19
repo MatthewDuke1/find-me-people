@@ -154,3 +154,29 @@ suite("buildReport — the honesty rule", () => {
     for (const s of empty.suggestions) assertEq(s.hostBullet, null);
   });
 });
+
+suite("buildReport - suggestions spread across the resume", () => {
+  const RESUME_MANY = [
+    "- Owned the product roadmap for a B2B SaaS platform, running discovery and user research with 20+ customers.",
+    "- Partnered cross-functionally with engineering and design to ship a billing rework that cut churn 18%.",
+    "- Built dashboards in SQL to track activation and retention across three cohorts.",
+    "- Led prioritization of the backlog across two squads, shipping 14 releases in a year.",
+    "- Ran pricing experiments that lifted trial-to-paid conversion by 22%.",
+  ].join("\n");
+
+  test("does not hang every gap off one bullet", () => {
+    // Regression: bestHostBullet scored only general posting overlap, so it
+    // picked one global winner and every suggestion pointed at it.
+    const r = buildReport(JOB, RESUME_MANY, { maxSuggestions: 8 });
+    const hosts = new Set(r.suggestions.map((s) => s.hostBullet).filter(Boolean));
+    assertTrue(hosts.size >= 3,
+      "expected gaps spread over several bullets, got " + hosts.size);
+  });
+
+  test("a term prefers a topically related bullet", () => {
+    const r = buildReport("We need SQL and dashboards for retention analysis.", RESUME_MANY, { maxSuggestions: 6 });
+    for (const s of r.suggestions) {
+      if (s.hostBullet) assertTrue(RESUME_MANY.includes(s.hostBullet));
+    }
+  });
+});
