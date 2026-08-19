@@ -17,6 +17,22 @@
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;" }[c] || c));
 
+  // Pro gate -- reuse popup.js's global if present; else soft-allow, matching
+  // advocacy-ui.js. Returns true if the action may proceed.
+  async function gate(label) {
+    if (typeof gateProFeature === "function") return await gateProFeature(label);
+    return true;
+  }
+
+  // Read entitlement without triggering the upgrade prompt, so the free view
+  // can be rendered differently rather than nagging on every scan.
+  async function hasPro() {
+    try {
+      if (typeof isPro === "function") return await isPro();
+    } catch (_) {}
+    return true; // never hide behind a licensing error
+  }
+
   function lcGet(k) {
     return new Promise((r) => {
       try { chrome.storage.local.get([k], (o) => r(o[k] ?? null)); }
@@ -67,7 +83,13 @@
     return "rs-low";
   }
 
-  function renderReport(host, report, postingTitle) {
+  // `pro` decides whether the rewrite guidance renders or is teased.
+  //
+  // The score and the covered/gap lists stay free on purpose: they are the
+  // proof the tool works, and a paywall shown before any value is demonstrated
+  // just reads as a nag. What Pro buys is the actionable half -- which of your
+  // own bullets to rewrite for each gap.
+  function renderReport(host, report, postingTitle, pro) {
     const matched = report.matched.slice(0, 24);
     const missing = report.missing.slice(0, 24);
 
@@ -92,7 +114,7 @@
           : '<span class="rs-none">No gaps found.</span>'
       }</div>
 
-      ${report.suggestions.length ? `
+      ${report.suggestions.length ? (pro ? `
         <div class="section-title" style="margin-top:14px">Where to close them</div>
         <div class="rs-hint">Sula rewrites nothing on its own. Each gap points at one of your own bullets &mdash; use it only if it is true of the work you did.</div>
         ${report.suggestions.map((s) => `
@@ -104,7 +126,14 @@
                  <button class="rs-copy" data-copy="${esc(s.hostBullet)}">Copy this bullet</button>`
               : ""}
           </div>`).join("")}
-      ` : ""}
+      ` : `
+        <div class="section-title" style="margin-top:14px">Where to close them <span class="pro-tag">PRO</span></div>
+        <div class="rs-locked">
+          <div class="rs-locked-lead">Sula found <strong>${report.suggestions.length}</strong> ${report.suggestions.length === 1 ? "bullet" : "bullets"} in your resume that could carry ${report.suggestions.length === 1 ? "this gap" : "these gaps"}.</div>
+          <div class="rs-hint" style="margin:6px 0 8px">Pro shows which of your own bullets to rewrite for each missing term. It never writes the claim for you &mdash; you decide what is true.</div>
+          <button class="action-chip outreach-chip" id="rs-upgrade">Unlock rewrite guidance</button>
+        </div>
+      `) : ""}
 
       <div class="rs-disclaim">${esc(report.disclaimer)}</div>`;
 
@@ -116,6 +145,18 @@
         );
       });
     });
+
+    const up = host.querySelector("#rs-upgrade");
+    if (up) {
+      up.addEventListener("click", async () => {
+        // gate() shows the upgrade prompt. If the user turns out to be
+        // entitled after all, re-render with the guidance rather than leaving
+        // them staring at a locked panel.
+        if (await gate("Resume rewrite guidance")) {
+          renderReport(host, report, postingTitle, true);
+        }
+      });
+    }
   }
 
   async function render(contentEl, ctx) {
@@ -182,7 +223,7 @@
 
       try {
         const report = api.buildReport(posting.text, resume, { limit: 30, maxSuggestions: 8 });
-        renderReport(out, report, posting.title);
+        renderReport(out, report, posting.title, await hasPro());
       } catch (_) {
         out.innerHTML = '<div class="rs-warn">Couldn\'t analyse this posting.</div>';
       }
