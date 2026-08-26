@@ -62,6 +62,38 @@ chrome.runtime.onInstalled.addListener((details) => {
   }
 });
 
+// --- Global Privacy Control (GPC) ruleset sync -------------------------------
+// The `Sec-GPC: 1` request header is set by a declarativeNetRequest ruleset
+// (gpc-rules.json), which ships enabled by default. When the user toggles GPC
+// off in the popup we must actually stop sending the header, so we enable or
+// disable the static ruleset to match the stored flag. (The JS-property half
+// is handled separately by gpc-inject.js reading the same flag.)
+const GPC_KEY = "sula_gpc_enabled";
+const GPC_RULESET_ID = "gpc_ruleset";
+
+async function syncGpcRuleset() {
+  if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.updateEnabledRulesets) return;
+  try {
+    const r = await chrome.storage.local.get([GPC_KEY]);
+    const enabled = r[GPC_KEY] !== false; // default ON
+    await chrome.declarativeNetRequest.updateEnabledRulesets(
+      enabled
+        ? { enableRulesetIds: [GPC_RULESET_ID] }
+        : { disableRulesetIds: [GPC_RULESET_ID] }
+    );
+  } catch (_e) {
+    // Non-fatal: the static ruleset's own "enabled": true is the fallback.
+  }
+}
+
+// Keep the header in step with the toggle, and re-assert on worker startup.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && Object.prototype.hasOwnProperty.call(changes, GPC_KEY)) {
+    syncGpcRuleset();
+  }
+});
+syncGpcRuleset();
+
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.action === "updateBadge" && sender.tab) {
     const count = msg.count || 0;

@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Sula - Find People Quickly",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "Finds the emails and phone numbers already on the page you're reading. Ranked, one click, 100% local. No account, no tracking.",
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "declarativeNetRequest"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -30,7 +31,26 @@
       "128": "icons/icon128.png"
     }
   },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "gpc_ruleset",
+        "enabled": true,
+        "path": "gpc-rules.json"
+      }
+    ]
+  },
   "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "gpc-inject.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    },
     {
       "matches": [
         "<all_urls>"

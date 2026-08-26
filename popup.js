@@ -815,6 +815,26 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  // Global Privacy Control master toggle -- persisted to chrome.storage.local.
+  // gpc-inject.js reads this on every page for the navigator property, and
+  // background.js watches it to enable/disable the Sec-GPC header ruleset.
+  // Default is ON (privacy-protective).
+  const GPC_KEY = "sula_gpc_enabled";
+  const gpcToggle = document.getElementById("gpc-toggle");
+  if (gpcToggle && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get([GPC_KEY], (r) => {
+      const on = r[GPC_KEY] !== false;
+      gpcToggle.classList.toggle("on", on);
+      gpcToggle.setAttribute("aria-checked", on ? "true" : "false");
+    });
+    gpcToggle.addEventListener("click", () => {
+      const willBeOn = !gpcToggle.classList.contains("on");
+      gpcToggle.classList.toggle("on", willBeOn);
+      gpcToggle.setAttribute("aria-checked", willBeOn ? "true" : "false");
+      chrome.storage.local.set({ [GPC_KEY]: willBeOn });
+    });
+  }
+
   // View tab switching (On this page <-> History). The "now" view is the
   // existing scan render; "history" lazy-renders from chrome.storage.local
   // whenever the tab is selected (cheap, history is < 50 entries).
