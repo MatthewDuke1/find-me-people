@@ -35,6 +35,17 @@ function versionLt(a, b) {
 }
 
 chrome.runtime.onInstalled.addListener((details) => {
+  // Record first-install time, once, so the day-7 upgrade prompt has a
+  // reference point. Only set on a genuine install (not an update), and never
+  // overwrite an existing value.
+  if (details.reason === "install") {
+    chrome.storage.local.get(["sula_installed_at"], (r) => {
+      if (!r || !r.sula_installed_at) {
+        chrome.storage.local.set({ sula_installed_at: Date.now() });
+      }
+    });
+  }
+
   // Rebrand notice: only people who knew it as "Find Me People" (1.x).
   if (
     details.reason === "update" &&

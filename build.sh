@@ -17,6 +17,7 @@ FILES=(
   popup.html
   popup.js
   onboarding.js
+  upgrade-cta.js
   license.js
   gpc-inject.js
   gpc-rules.json

@@ -803,6 +803,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     window.SulaOnboarding.maybeShow();
   }
 
+  // Day-7 upgrade CTA for non-Pro users. Its own gates (isPro, onboarding
+  // done, 7+ days, once-only) prevent it from colliding with onboarding or
+  // reaching a paying/grandfathered user; we still skip it when the onboarding
+  // overlay is on screen this session, as a belt-and-braces guard.
+  if (
+    window.SulaUpgradeCta &&
+    typeof window.SulaUpgradeCta.maybeShow === "function" &&
+    !document.getElementById("sula-onb")
+  ) {
+    window.SulaUpgradeCta.maybeShow();
+  }
+
   // Side panel master toggle -- persisted to chrome.storage.local so the
   // content scripts on every tab can read it. Default is ON.
   const SP_MASTER_KEY = "fmp_side_panel_enabled";
