@@ -38,9 +38,9 @@
       body: "Sula is on your side. It shows your refund deadline, drafts the letter that actually gets a refund, guides a card dispute, and helps you cancel subscriptions — you always read it and hit send yourself.",
     },
     {
-      emoji: "🔒",
-      title: "Your info never leaves your device",
-      body: "All of this happens right here in your browser. No account, no tracking, nothing sold. That's the whole point. Ready when you are.",
+      emoji: "🛡️",
+      title: "We tell sites to stop selling your data",
+      body: "Sula sends every site you visit a legally-binding request to stop selling and sharing your personal information. And everything Sula does happens right here in your browser — no account, nothing tracked, nothing sold. That's the whole point.",
     },
   ];
 
