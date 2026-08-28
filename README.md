@@ -47,6 +47,14 @@ The result: reaching a real human for help has become a skill, not a right.
 
 ## Changelog
 
+### 2.6.0 -- 2026-08-28
+
+Statement import. Same `activeTab` / `scripting` / `storage` / `declarativeNetRequest` permission footprint as 2.5.0 — the new feature is all local file reading, no new permission. No user action required to update; stays above `PRICING_VERSION` (2.1.0), so grandfathering is unaffected.
+
+**New:**
+
+- **Find your subscriptions from your own bank statement (Pro).** The anti-Rocket-Money way to see recurring charges: export your own statement (CSV / OFX / QFX) from your own bank and drop it into the new Subs tab. Sula parses it entirely in the browser — the file never leaves your device, and Sula never connects to your bank — then surfaces the recurring charges with a monthly/annual tally, flags price increases, and offers a downloadable summary or one-click hand-off into the Subscription Guardian for renewal reminders. Because Sula never touches the bank (no Plaid, no aggregation, no credentials), none of the data-aggregator / GLBA regulatory burden that Plaid-based tools carry applies — it's the same posture as opening the file yourself. Handles the differing real shapes of the major US banks: Chase's single signed-amount column, Capital One's split debit/credit columns, Wells Fargo / Amex, and OFX/QFX. Columns are detected by header meaning, not fixed position, and recurring charges are found by grouping normalized merchants and classifying the cadence from the gap between charges.
+
 ### 2.5.0 -- 2026-08-28
 
 Privacy and onboarding release. Three user-facing additions since 2.4.0, plus the packaging/CI hardening that keeps releases from shipping broken.
