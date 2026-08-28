@@ -36,6 +36,8 @@ $Files = @(
   "autofill-page-button.js",
   "resume-injection.js",
   "resume-ui.js",
+  "statement-parser.js",
+  "subscriptions-ui.js",
   "privacy-guard-ui.js",
   "refund-policy-extractor.js",
   "refund-moment-detector.js",

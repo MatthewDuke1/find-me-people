@@ -500,6 +500,51 @@
     .pg-status { font-size: 10.5px; color: #35ce8d; margin-top: 4px; }
     .pg-status.pg-due { color: #fbbf24; font-weight: 600; }
     .pg-fine { font-size: 10px; color: #52525b; line-height: 1.5; margin-top: 12px; }
+
+    /* Subscriptions / statement import tab */
+    .subs-wrap { padding: 12px 16px 16px; }
+    .subs-intro-title { font-size: 13px; font-weight: 700; color: #fafafa; margin-bottom: 4px; }
+    .subs-intro p { font-size: 11.5px; color: #a1a1aa; line-height: 1.5; }
+    .subs-intro b { color: #d4d4d8; }
+    .subs-drop { display: flex; flex-direction: column; align-items: center; text-align: center;
+      gap: 4px; padding: 22px 16px; margin: 14px 0 8px; cursor: pointer;
+      background: #111113; border: 1.5px dashed #3f3f46; border-radius: 12px;
+      transition: border-color 0.15s, background 0.15s; }
+    .subs-drop:hover, .subs-drop.over { border-color: #35ce8d; background: rgba(53,206,141,0.05); }
+    .subs-drop-icon { font-size: 24px; }
+    .subs-drop-main { font-size: 12.5px; font-weight: 600; color: #fafafa; }
+    .subs-drop-sub { font-size: 10.5px; color: #71717a; }
+    .subs-err { font-size: 11px; color: #fbbf24; background: rgba(251,191,36,0.08);
+      border: 1px solid rgba(251,191,36,0.22); border-radius: 8px; padding: 8px 10px; margin: 4px 0; line-height: 1.4; }
+    .subs-fine { font-size: 10px; color: #52525b; line-height: 1.5; margin-top: 10px; text-align: center; }
+    .subs-tally { text-align: center; padding: 8px 0 14px; }
+    .subs-tally-big { font-size: 28px; font-weight: 800; color: #e7b75a; line-height: 1; }
+    .subs-tally-big span { font-size: 13px; color: #71717a; font-weight: 600; }
+    .subs-tally-sub { font-size: 11px; color: #a1a1aa; margin-top: 4px; }
+    .subs-list { display: flex; flex-direction: column; gap: 5px; }
+    .subs-list .sub-row { display: flex; justify-content: space-between; align-items: center; gap: 10px;
+      padding: 9px 11px; background: #111113; border: 1px solid #1e1e1e; border-radius: 8px; }
+    .sub-main { min-width: 0; }
+    .sub-name { font-size: 12.5px; font-weight: 600; color: #fafafa; }
+    .sub-flag { font-size: 9px; font-weight: 700; color: #fbbf24; background: rgba(251,191,36,0.12);
+      padding: 1px 5px; border-radius: 6px; letter-spacing: 0.3px; }
+    .sub-meta { font-size: 10px; color: #71717a; margin-top: 1px; }
+    .sub-amt { text-align: right; font-size: 13px; font-weight: 700; color: #fafafa; white-space: nowrap; }
+    .sub-per { font-size: 10px; color: #71717a; font-weight: 500; }
+    .sub-yr { font-size: 10px; color: #35ce8d; font-weight: 600; }
+    .subs-actions { display: flex; gap: 8px; margin: 14px 0 6px; }
+    .subs-btn { flex: 1; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer;
+      padding: 9px; border-radius: 8px; background: #18181b; border: 1px solid #27272a; color: #d4d4d8;
+      transition: all 0.15s; }
+    .subs-btn:hover { border-color: #60a5fa; color: #60a5fa; }
+    .subs-btn.primary { background: #35ce8d; border-color: #35ce8d; color: #07130d; }
+    .subs-btn.primary:hover { background: #57e5a8; color: #07130d; }
+    .subs-btn:disabled { opacity: 0.6; cursor: default; border-color: #27272a; color: #71717a; }
+    .subs-reimport { width: 100%; background: none; border: none; color: #71717a; font-size: 11px;
+      cursor: pointer; font-family: inherit; padding: 6px; }
+    .subs-reimport:hover { color: #a1a1aa; }
+    .subs-btn:focus-visible, .subs-reimport:focus-visible, .subs-drop:focus-within {
+      outline: 2px solid #35ce8d; outline-offset: 2px; }
   </style>
 </head>
 <body>
@@ -516,6 +561,7 @@
     <button class="view-tab" data-view="advocacy">Advocacy</button>
     <button class="view-tab" data-view="autofill">Autofill</button>
     <button class="view-tab" data-view="resume">Resume</button>
+    <button class="view-tab" data-view="subs">Subs</button>
     <button class="view-tab" data-view="privacy">Privacy</button>
   </div>
 
@@ -558,6 +604,8 @@
   <script src="autofill-ui.js"></script>
   <script src="resume-injection.js"></script>
   <script src="resume-ui.js"></script>
+  <script src="statement-parser.js"></script>
+  <script src="subscriptions-ui.js"></script>
   <script src="privacy-guard-ui.js"></script>
   <script src="onboarding.js"></script>
   <script src="upgrade-cta.js"></script>
