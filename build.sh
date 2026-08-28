@@ -35,6 +35,7 @@ FILES=(
   autofill-page-button.js
   resume-injection.js
   resume-ui.js
+  privacy-guard-ui.js
   refund-policy-extractor.js
   refund-moment-detector.js
   icons

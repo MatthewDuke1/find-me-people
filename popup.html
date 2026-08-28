@@ -463,6 +463,43 @@
     .rs-locked{background:rgba(96,165,250,.06);border:1px solid rgba(96,165,250,.22);
       border-radius:9px;padding:11px 12px;margin-top:6px}
     .rs-locked-lead{font-size:12px;color:#cdd6e2;line-height:1.45}
+    /* Privacy Guard tab */
+    .pg-wrap { padding: 12px 16px 16px; }
+    .pg-gpc { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px;
+      border-radius: 8px; margin-bottom: 14px; }
+    .pg-gpc.on { background: rgba(53,206,141,0.08); border: 1px solid rgba(53,206,141,0.22); }
+    .pg-gpc.off { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.22); }
+    .pg-gpc-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+    .pg-gpc.on .pg-gpc-dot { background: #35ce8d; box-shadow: 0 0 8px rgba(53,206,141,0.6); }
+    .pg-gpc.off .pg-gpc-dot { background: #fbbf24; }
+    .pg-gpc-title { font-size: 12px; font-weight: 700; color: #fafafa; }
+    .pg-gpc-sub { font-size: 11px; color: #a1a1aa; margin-top: 2px; line-height: 1.4; }
+    .pg-head { display: flex; justify-content: space-between; align-items: baseline; }
+    .pg-head-title { font-size: 13px; font-weight: 700; color: #fafafa; }
+    .pg-progress { font-size: 11px; font-weight: 700; color: #35ce8d;
+      background: rgba(53,206,141,0.12); padding: 2px 8px; border-radius: 999px; }
+    .pg-intro { font-size: 11px; color: #a1a1aa; line-height: 1.5; margin: 6px 0 12px; }
+    .pg-list { display: flex; flex-direction: column; gap: 6px; }
+    .pg-row { display: flex; gap: 10px; align-items: flex-start; padding: 9px 11px;
+      background: #111113; border: 1px solid #1e1e1e; border-radius: 8px; }
+    .pg-row.pg-done { border-color: rgba(53,206,141,0.25); }
+    .pg-check { width: 18px; height: 18px; margin-top: 1px; flex-shrink: 0;
+      border: 2px solid #3f3f46; border-radius: 5px; background: #18181b;
+      cursor: pointer; position: relative; padding: 0; transition: all 0.15s; }
+    .pg-check:hover { border-color: #35ce8d; }
+    .pg-row.pg-done .pg-check { background: #35ce8d; border-color: #35ce8d; }
+    .pg-row.pg-done .pg-check::after { content: ""; position: absolute; left: 5px; top: 1px;
+      width: 4px; height: 9px; border: solid #0a0a0a; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+    .pg-check:focus-visible { outline: 2px solid #35ce8d; outline-offset: 2px; }
+    .pg-row-body { min-width: 0; flex: 1; }
+    .pg-name { font-size: 12.5px; font-weight: 600; color: #fafafa; }
+    .pg-row.pg-done .pg-name { color: #a1a1aa; }
+    .pg-note { font-size: 10.5px; color: #71717a; margin-top: 1px; line-height: 1.4; }
+    .pg-link { font-size: 11px; color: #60a5fa; text-decoration: none; display: inline-block; margin-top: 4px; }
+    .pg-link:hover { text-decoration: underline; }
+    .pg-status { font-size: 10.5px; color: #35ce8d; margin-top: 4px; }
+    .pg-status.pg-due { color: #fbbf24; font-weight: 600; }
+    .pg-fine { font-size: 10px; color: #52525b; line-height: 1.5; margin-top: 12px; }
   </style>
 </head>
 <body>
@@ -479,6 +516,7 @@
     <button class="view-tab" data-view="advocacy">Advocacy</button>
     <button class="view-tab" data-view="autofill">Autofill</button>
     <button class="view-tab" data-view="resume">Resume</button>
+    <button class="view-tab" data-view="privacy">Privacy</button>
   </div>
 
   <div id="content">
@@ -520,6 +558,7 @@
   <script src="autofill-ui.js"></script>
   <script src="resume-injection.js"></script>
   <script src="resume-ui.js"></script>
+  <script src="privacy-guard-ui.js"></script>
   <script src="onboarding.js"></script>
   <script src="upgrade-cta.js"></script>
   <script src="popup.js"></script>
