@@ -44,6 +44,13 @@ mkdir -p "$OUT_DIR"
 zip -rq "$OUT_DIR/sula-chrome.zip"  "${FILES[@]}"
 zip -rq "$OUT_DIR/sula-firefox.zip" "${FILES[@]}"
 
+# Guard: fail the build if either zip is missing a file its manifest
+# references. This is what stops a package that Chrome loads broken (or AMO
+# rejects) from ever being produced. set -e aborts on a non-zero exit.
+PY="${PYTHON:-python3}"
+"$PY" scripts/check_manifest_files.py "$OUT_DIR/sula-chrome.zip"
+"$PY" scripts/check_manifest_files.py "$OUT_DIR/sula-firefox.zip"
+
 echo "Built:"
 echo "  $OUT_DIR/sula-chrome.zip   -> https://chrome.google.com/webstore/devconsole"
 echo "  $OUT_DIR/sula-firefox.zip  -> https://addons.mozilla.org/developers"
