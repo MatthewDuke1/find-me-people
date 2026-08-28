@@ -797,6 +797,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Rebrand notice (only renders when the update-from-1.x flag is set).
   renderRebrandNotice();
 
+  // First-run walkthrough for new users (shows once, ever). Only 1.x upgraders
+  // see the rebrand notice, and they aren't new, so the two never collide.
+  if (window.SulaOnboarding && typeof window.SulaOnboarding.maybeShow === "function") {
+    window.SulaOnboarding.maybeShow();
+  }
+
   // Side panel master toggle -- persisted to chrome.storage.local so the
   // content scripts on every tab can read it. Default is ON.
   const SP_MASTER_KEY = "fmp_side_panel_enabled";
