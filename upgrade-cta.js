@@ -27,9 +27,12 @@
   const ONBOARDED_KEY = "sula_onboarded";
   const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
-  // The default checkout the CTA button opens (matches license.js).
-  const CHECKOUT_URL =
-    "https://sula.lemonsqueezy.com/checkout/buy/47598c36-6163-4f4e-93de-9266450ebfaa";
+  // Where the CTA button sends people: the value page (calculator + the
+  // $0-commission case), which then opens LemonSqueezy checkout in-context.
+  // Leading with the value page rather than the raw checkout is deliberate --
+  // a day-7 prompt is an interruption, not a "buy" click, so we make the case
+  // before asking for payment.
+  const UPGRADE_URL = "https://trysula.com/upgrade.html";
 
   function get(keys) {
     return new Promise((resolve) => {
@@ -111,8 +114,8 @@
 
     go.addEventListener("click", () => {
       markShown();
-      if (chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: CHECKOUT_URL });
-      else window.open(CHECKOUT_URL, "_blank", "noopener");
+      if (chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: UPGRADE_URL });
+      else window.open(UPGRADE_URL, "_blank", "noopener");
       overlay.remove();
     });
     later.addEventListener("click", close);
