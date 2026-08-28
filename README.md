@@ -47,6 +47,23 @@ The result: reaching a real human for help has become a skill, not a right.
 
 ## Changelog
 
+### 2.5.0 -- 2026-08-28
+
+Privacy and onboarding release. Three user-facing additions since 2.4.0, plus the packaging/CI hardening that keeps releases from shipping broken.
+
+One new permission since the last store listing: `declarativeNetRequest` (added in 2.4.0 for the GPC header). Otherwise the same `activeTab` / `scripting` / `storage` / `<all_urls>` footprint and the same `chrome.storage.local` schema -- no user action required to update. Not grandfathering-affecting: `PRICING_VERSION` is 2.1.0 and this stays above it.
+
+**New:**
+
+- **First-run walkthrough.** A one-time, four-step welcome the first time the popup opens, in plain language for the non-technical audience Sula is built for: it finds the real support contact, it works automatically on every site, it gets your money back, and everything stays on your device. Shows once, ever; skippable; keyboard-navigable and reduced-motion aware.
+- **Privacy Guard (Pro).** A new Privacy tab with two local jobs: a live status readout of Sula's Global Privacy Control "do-not-sell" signal, and a data-broker opt-out tracker -- the eight highest-impact brokers, each with its real opt-out page, a done checkbox, and a re-check reminder six months out (brokers re-list you). Honest by design: Sula points you at each opt-out and tracks it; it does not submit removals for you.
+- **Day-7 value nudge.** After a week of use, non-Pro users see a one-time card making the case for Pro -- the time-and-refunds value, and the $0-commission contrast with services that keep 30-40% of what they win -- linking to the value calculator at trysula.com/upgrade. Gated so it never reaches a paying or grandfathered user, and fails safe (stays hidden) if entitlement can't be determined.
+
+**Under the hood:**
+
+- **Global Privacy Control (2.4.0, first store release here).** Sends the legally-binding "do not sell or share my data" signal on every page -- the `Sec-GPC` request header (via a `declarativeNetRequest` ruleset) and the `navigator.globalPrivacyControl` property. On by default, one toggle to disable.
+- **Build integrity guard.** The build now fails if a packaged zip is missing any file its manifest references, so a package that Chrome loads broken (or AMO rejects) can no longer be produced. Both build scripts (`build.sh` / `build.ps1`) are kept in parity by a test.
+
 ### 1.6.0 -- 2026-06-03
 
 Minor version bump for a strategically different product than what shipped as 1.5.2. The release that was originally drafted as 1.5.7 grew while it sat -- when the merge dust settled there were 20 PRs of feature work between 1.5.2 and now and the manifest description / privacy policy / product positioning had shifted from "find hidden contacts" to "bypass chatbots." That's a minor bump, not a patch.
