@@ -16,6 +16,7 @@ FILES=(
   content.js
   popup.html
   popup.js
+  onboarding.js
   license.js
   job-contacts.js
   email-verify.js
