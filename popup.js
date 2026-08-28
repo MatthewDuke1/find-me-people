@@ -872,6 +872,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       else if (v === "resume" && window.SulaResumeUI) {
         window.SulaResumeUI.render(contentEl, { tab });
       }
+      else if (v === "subs" && window.SulaSubscriptionsUI) {
+        window.SulaSubscriptionsUI.render(contentEl, { tab });
+      }
       else if (v === "privacy" && window.SulaPrivacyGuardUI) {
         window.SulaPrivacyGuardUI.render(contentEl, { tab });
       }
