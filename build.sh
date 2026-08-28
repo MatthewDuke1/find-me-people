@@ -17,6 +17,8 @@ FILES=(
   popup.html
   popup.js
   license.js
+  gpc-inject.js
+  gpc-rules.json
   job-contacts.js
   email-verify.js
   escalation-registry.js
