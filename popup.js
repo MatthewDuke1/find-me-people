@@ -651,10 +651,23 @@ async function renderProFooter() {
     if (d) d.addEventListener("click", async () => { await deactivateLicense(); renderProFooter(); });
     return;
   }
+  // List what Pro actually unlocks, so the benefit is clear BEFORE checkout
+  // (QA #3: the old "export & more" said nothing). Keep it to the headline
+  // features; the pricing page has the full breakdown.
   el.innerHTML =
-    '<div class="pro-row"><span class="pro-label"><span class="bolt">&#9889;</span> Unlock Pro &mdash; export &amp; more</span>' +
+    '<div class="pro-row"><span class="pro-label"><span class="bolt">&#9889;</span> Unlock Sula Pro</span>' +
     '<button class="pro-cta" id="pro-upgrade">Upgrade</button></div>' +
-    '<div class="pro-activate"><input id="pro-key" type="text" placeholder="Paste license key" autocomplete="off" />' +
+    // These three are the publicly-sold Pro features on trysula.com/pricing.
+    // Keep this list in sync with that page — don't list features here that the
+    // site doesn't advertise as Pro.
+    '<ul class="pro-features">' +
+      '<li>Export contacts (CSV / vCard)</li>' +
+      '<li>Draft the First Touch (outreach)</li>' +
+      '<li>Save to CRM (your webhook)</li>' +
+      '<li>3 devices per licence</li>' +
+    '</ul>' +
+    '<div class="pro-more"><a href="https://trysula.com/pricing.html" target="_blank" rel="noopener">See everything in Pro &rarr;</a></div>' +
+    '<div class="pro-activate"><input id="pro-key" type="text" placeholder="Already bought? Paste license key" autocomplete="off" />' +
     '<button id="pro-activate-btn">Activate</button></div>' +
     '<div class="pro-msg" id="pro-msg"></div>';
   document.getElementById("pro-upgrade").addEventListener("click", () => openUpgrade());
