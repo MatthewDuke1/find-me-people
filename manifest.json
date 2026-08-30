@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Sula - Find People Quickly",
+  "name": "Sula - Contacts, Refunds, Shopping",
   "version": "2.6.0",
-  "description": "Finds the emails and phone numbers already on the page you're reading. Ranked, one click, 100% local. No account, no tracking.",
+  "description": "Contacts, refunds, and subscriptions - handled on the page you're on. 100% local. No account, no tracking.",
   "permissions": [
     "activeTab",
     "scripting",
