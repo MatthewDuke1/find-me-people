@@ -24,6 +24,44 @@
   function lcGet(k) { return new Promise((r) => chrome.storage.local.get([k], (o) => r(o[k] ?? null))); }
   function lcSet(o) { return new Promise((r) => chrome.storage.local.set(o, r)); }
 
+  // Format validators for the fields that have a required shape. Each returns
+  // an error string for a bad value, or "" when the value is acceptable. Empty
+  // values always pass — every field is optional; we only validate what's typed.
+  const VALIDATORS = {
+    // Deliberately permissive: one @, a dot in the domain, no spaces. We're
+    // catching typos, not enforcing RFC 5322.
+    email: (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? "" : "Enter a valid email, e.g. you@example.com.",
+    // Accept digits with common separators; require at least 7 digits so a
+    // stray number isn't mistaken for a phone. Allows a leading +.
+    phone: (v) => (v.replace(/[^\d]/g, "").length >= 7 && /^[+\d][\d\s().-]*$/.test(v))
+      ? "" : "Enter a valid phone number.",
+    linkedin: (v) => isUrlish(v) ? "" : "Enter a valid URL (https://…).",
+    github: (v) => isUrlish(v) ? "" : "Enter a valid URL or profile (https://…).",
+    website: (v) => isUrlish(v) ? "" : "Enter a valid URL (https://…).",
+  };
+
+  // A forgiving URL check: accepts a full URL, or a bare host like
+  // "linkedin.com/in/me" that we can reasonably treat as one.
+  function isUrlish(v) {
+    const s = v.trim();
+    try { new URL(/^https?:\/\//i.test(s) ? s : "https://" + s); }
+    catch (_) { return false; }
+    return /\.[a-z]{2,}/i.test(s); // must contain a dotted domain
+  }
+
+  // Validate the collected profile. Returns { ok, errors } where errors maps
+  // field key → message for each field that failed.
+  function validateProfile(p) {
+    const errors = {};
+    for (const [k, fn] of Object.entries(VALIDATORS)) {
+      const v = (p[k] || "").trim();
+      if (!v) continue; // optional
+      const msg = fn(v);
+      if (msg) errors[k] = msg;
+    }
+    return { ok: Object.keys(errors).length === 0, errors };
+  }
+
   async function render(contentEl, ctx) {
     const tab = ctx && ctx.tab;
     const profile = (await lcGet(PROFILE_KEY)) || {};
@@ -56,10 +94,39 @@
       return p;
     };
 
+    // Paint per-field error state and return the first message (for the summary
+    // line). Clears any prior errors each call so fixed fields un-highlight.
+    function paintErrors(errors) {
+      contentEl.querySelectorAll(".af-in").forEach((i) => {
+        const bad = errors && errors[i.dataset.k];
+        i.classList.toggle("af-invalid", !!bad);
+        i.setAttribute("aria-invalid", bad ? "true" : "false");
+        i.title = bad || "";
+      });
+      return errors ? (Object.values(errors)[0] || "") : "";
+    }
+
+    // Validate before persisting. On failure: highlight fields, show why, and
+    // don't save. Returns the validated profile, or null if it didn't pass.
+    function collectValidated(statusEl) {
+      const p = collect();
+      const { ok, errors } = validateProfile(p);
+      const firstMsg = paintErrors(ok ? null : errors);
+      if (!ok) {
+        if (statusEl) { statusEl.textContent = firstMsg; statusEl.style.color = "#c0392b"; }
+        return null;
+      }
+      if (statusEl) statusEl.style.color = "";
+      return p;
+    }
+
     contentEl.querySelector("#af-save").addEventListener("click", async () => {
-      await lcSet({ [PROFILE_KEY]: collect() });
-      const s = contentEl.querySelector("#af-saved"); s.textContent = "Saved ✓";
-      setTimeout(() => (s.textContent = ""), 1500);
+      const s = contentEl.querySelector("#af-saved");
+      const p = collectValidated(s);
+      if (!p) return; // invalid — message already shown, nothing saved
+      await lcSet({ [PROFILE_KEY]: p });
+      s.textContent = "Saved ✓";
+      setTimeout(() => { s.textContent = ""; s.style.color = ""; }, 1500);
     });
 
     // Applicant-tracking systems (iCIMS, Workday, Greenhouse/Lever embeds) put
@@ -93,10 +160,14 @@
     }
 
     contentEl.querySelector("#af-fill").addEventListener("click", async () => {
-      const box = contentEl.querySelector("#af-result"); box.hidden = false; box.textContent = "Filling…";
-      await lcSet({ [PROFILE_KEY]: collect() }); // fill with the latest edits, saved or not
+      const box = contentEl.querySelector("#af-result"); box.hidden = false;
+      // Validate first — don't push a malformed email/phone/URL into a form.
+      const p = collectValidated(null);
+      if (!p) { box.textContent = paintErrors(validateProfile(collect()).errors) || "Fix the highlighted fields first."; return; }
+      box.textContent = "Filling…";
+      await lcSet({ [PROFILE_KEY]: p }); // fill with the latest edits, saved or not
       try {
-        const parts = await runInAllFrames("autofill", collect());
+        const parts = await runInAllFrames("autofill", p);
         if (!parts.length) {
           box.textContent = "Couldn't reach this page — open Autofill while on the form (some pages block extensions).";
           return;
