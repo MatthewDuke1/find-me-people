@@ -88,7 +88,7 @@
             <select class="adv-in adv-sel" id="sub-cadence"><option value="monthly">Monthly</option><option value="annual">Annual</option><option value="quarterly">Quarterly</option><option value="weekly">Weekly</option></select>
             <input class="adv-in" id="sub-start" placeholder="Started (YYYY-MM-DD)">
           </div>
-          <div class="adv-row"><button class="action-chip" id="sub-add">Track subscription</button></div>
+          <div class="adv-row"><button class="action-chip" id="sub-add">Track subscription</button><span id="sub-msg" class="adv-hint" style="margin:0" role="alert" aria-live="polite"></span></div>
           <div id="sub-list"></div>
         </div>
       </div>`;
@@ -183,23 +183,69 @@
       el.innerHTML = list.map((s, i) => {
         let days = null; try { days = G.daysUntilRenewal(s, now); } catch (_) {}
         return `<div class="adv-dl"><div class="adv-dl-top"><strong>${esc(s.company)}</strong><span>${days == null ? "" : "renews in " + days + "d"}</span></div>
-          <div class="adv-dl-sub">${esc(s.amount || "")} · ${esc(s.cadence)} <button class="adv-del" data-del="${i}">remove</button></div></div>`;
+          <div class="adv-dl-sub">${esc(s.amount || "")} · ${esc(s.cadence)} <button class="adv-del" data-del="${i}" data-name="${esc(s.company)}">remove</button></div></div>`;
       }).join("");
       el.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
+        // Confirm before deleting — a tracked subscription is easy to lose by a
+        // stray click, and there's no undo. window.confirm is fine in a popup.
+        const name = b.getAttribute("data-name") || "this subscription";
+        if (!window.confirm(`Remove ${name} from tracking?`)) return;
         const arr = (await lcGet(SUBS_KEY)) || []; arr.splice(+b.dataset.del, 1); await lcSet({ [SUBS_KEY]: arr }); renderSubs();
       }));
     }
+
+    // Inline validation feedback for the add form. Clears itself so the message
+    // doesn't linger past the next successful action.
+    const subMsg = contentEl.querySelector("#sub-msg");
+    let subMsgTimer = null;
+    function showSubMsg(text, ok) {
+      if (!subMsg) return;
+      subMsg.textContent = text;
+      subMsg.style.color = ok ? "" : "#c0392b";
+      if (subMsgTimer) clearTimeout(subMsgTimer);
+      if (ok) subMsgTimer = setTimeout(() => { subMsg.textContent = ""; }, 1800);
+    }
+
     contentEl.querySelector("#sub-add").addEventListener("click", async () => {
+      const company = contentEl.querySelector("#sub-company").value.trim();
+      const amountRaw = contentEl.querySelector("#sub-amount").value.trim();
       const startStr = contentEl.querySelector("#sub-start").value.trim();
-      const startMs = startStr ? Date.parse(startStr) : Date.now();
+
+      // --- Field validation with a visible message (was: silent no-op) ---
+      if (!company) return showSubMsg("Enter a service name.", false);
+      // Amount is optional, but if given it must read as money. Accept things
+      // like "$9.99", "9.99", "12" — reject letters/garbage.
+      if (amountRaw && !/^\$?\d{1,7}(\.\d{1,2})?$/.test(amountRaw))
+        return showSubMsg("Amount must be a number, e.g. 9.99.", false);
+      // Date is optional (defaults to today), but a typed date must be valid.
+      let startMs = Date.now();
+      if (startStr) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(startStr) || isNaN(Date.parse(startStr)))
+          return showSubMsg("Date must be YYYY-MM-DD.", false);
+        startMs = Date.parse(startStr);
+      }
+
       const norm = G.normalizeSubscription({
-        company: contentEl.querySelector("#sub-company").value.trim(),
-        amount: contentEl.querySelector("#sub-amount").value.trim(),
+        company,
+        amount: amountRaw,
         cadence: contentEl.querySelector("#sub-cadence").value,
-        startMs: isNaN(startMs) ? Date.now() : startMs,
+        startMs,
       });
-      if (!norm.ok) return;
-      const arr = (await lcGet(SUBS_KEY)) || []; arr.unshift(norm.sub); await lcSet({ [SUBS_KEY]: arr.slice(0, 100) });
+      if (!norm.ok) return showSubMsg("Couldn't save that subscription — check the fields.", false);
+
+      const arr = (await lcGet(SUBS_KEY)) || [];
+      // --- Duplicate guard (#12): match on service name, case-insensitive ---
+      const key = norm.sub.company.trim().toLowerCase();
+      if (arr.some((s) => (s.company || "").trim().toLowerCase() === key))
+        return showSubMsg(`${norm.sub.company} is already tracked.`, false);
+
+      arr.unshift(norm.sub); await lcSet({ [SUBS_KEY]: arr.slice(0, 100) });
+      // Clear the inputs so a second add doesn't accidentally re-submit the same
+      // values, and confirm success.
+      contentEl.querySelector("#sub-company").value = "";
+      contentEl.querySelector("#sub-amount").value = "";
+      contentEl.querySelector("#sub-start").value = "";
+      showSubMsg("Tracking ✓", true);
       renderSubs();
     });
 
