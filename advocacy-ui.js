@@ -55,7 +55,7 @@
         </div>
 
         <div class="section">
-          <div class="section-title">Draft your request <span class="pro-tag">PRO</span></div>
+          <div class="section-title">Draft your request</div>
           <div class="adv-row">
             <select class="adv-in adv-sel" id="adv-scenario"></select>
             <button class="action-chip outreach-chip" id="adv-gen">Generate letter</button>
@@ -140,7 +140,9 @@
     });
 
     contentEl.querySelector("#adv-gen").addEventListener("click", async () => {
-      if (!(await gate("Refund letter"))) return;
+      // Refund letter is FREE — it's the deliverable half of the "get refunds"
+      // promise, so the headline hook works without paying. (Escalation, cold
+      // outreach, statement import, export, CRM stay Pro.)
       const l = T.buildLetter(scenSel.value, facts());
       if (!l) return;
       const out = contentEl.querySelector("#adv-out");
