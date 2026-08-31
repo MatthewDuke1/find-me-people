@@ -22,6 +22,13 @@
 
   // version -> { headline, items[] }. Newest first. Keep copy plain and short.
   const NOTES = {
+    "2.6.4": {
+      headline: "New: Checkout Guard",
+      items: [
+        "At checkout, Sula reads the fine print before you pay — the return window, restocking or final-sale catches, and whether it auto-renews.",
+        "A quiet heads-up, right when it matters. Nothing leaves your browser.",
+      ],
+    },
     "2.6.3": {
       headline: "Refund letters are now free",
       items: [
