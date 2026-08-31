@@ -128,6 +128,7 @@
           <div class="subs-drop-icon">📄</div>
           <div class="subs-drop-main">Choose or drop your statement file</div>
           <div class="subs-drop-sub">CSV / OFX / QFX — Chase, Wells Fargo, Capital One &amp; more</div>
+          <div class="subs-drop-limit">Maximum file size: 10 MB</div>
         </label>
         <div class="subs-err" id="subs-err" hidden></div>
         <p class="subs-fine">100% local. No account, no bank login, nothing uploaded — that's the whole point.</p>
@@ -139,9 +140,13 @@
 
     function showErr(msg) { errEl.hidden = false; errEl.textContent = msg; }
 
+    const MAX_BYTES = 10 * 1024 * 1024; // 10 MB — must match the stated limit
+
     async function handleFile(file) {
       if (!file) return;
       errEl.hidden = true;
+      if (file.size > MAX_BYTES)
+        return showErr("That file is over the 10 MB limit. A single account's CSV/OFX export is well under this — pick one account and try again.");
       let text;
       try { text = await file.text(); }
       catch (_e) { return showErr("Couldn't read that file. Try exporting again."); }
