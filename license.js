@@ -53,6 +53,22 @@ function _lsForm(params) {
   };
 }
 
+// Map a raw LemonSqueezy API error to a message a user should see. The API
+// returns technical strings like "license_key not found." — never show those
+// (#7). Anything unrecognized falls back to a generic, non-technical line.
+function _friendlyLicenseError(raw) {
+  const s = String(raw || "").toLowerCase();
+  if (s.includes("not found") || s.includes("invalid"))
+    return "That license key wasn't recognized. Check for typos and try again.";
+  if (s.includes("activation limit") || s.includes("reached"))
+    return "This key is already active on the maximum number of devices. Deactivate it on another device first.";
+  if (s.includes("expired"))
+    return "This license has expired. Renew it to reactivate Pro.";
+  if (s.includes("disabled"))
+    return "This license has been disabled. Contact support if you think that's a mistake.";
+  return "That license key couldn't be activated. Check the key and try again.";
+}
+
 // Activate a license key on this install. Stores the instance id so we can
 // validate later. Returns { ok } or { ok:false, error }.
 async function activateLicense(key) {
@@ -79,7 +95,7 @@ async function activateLicense(key) {
     }
     return {
       ok: false,
-      error: (r && r.error) || "That license key couldn't be activated.",
+      error: _friendlyLicenseError(r && r.error),
     };
   } catch (_) {
     return { ok: false, error: "Network error — try again." };
