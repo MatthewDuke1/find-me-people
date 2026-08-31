@@ -900,7 +900,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       const matched = q
         ? hist.filter((e) => (e.value + " " + (e.hostname || "")).toLowerCase().includes(q))
         : hist;
-      let html = `<input class="history-search" id="history-search" type="search" placeholder="Search history (${hist.length})" value="${escapeHtml(filter || "")}" />`;
+      // Custom clear (X): type="search" only shows a native button in Chrome
+      // (and it's dark-on-dark there); Firefox shows none. Our own button works
+      // the same in every browser and matches the theme (#8).
+      let html = `<div class="history-search-wrap">
+        <input class="history-search" id="history-search" type="search" placeholder="Search history (${hist.length})" value="${escapeHtml(filter || "")}" />
+        <button class="history-search-clear" id="history-search-clear" type="button" aria-label="Clear search"${(filter || "") ? "" : " hidden"}>&times;</button>
+      </div>`;
       html += '<div class="history-list">';
       if (matched.length === 0) {
         html += `<div class="history-empty">${hist.length === 0 ? "No copied contacts yet. Click any contact above to save it here." : "No matches."}</div>`;
@@ -936,6 +942,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         search.focus();
         // Place caret at end
         const v = search.value; search.value = ""; search.value = v;
+      }
+      const searchClear = document.getElementById("history-search-clear");
+      if (searchClear) {
+        searchClear.addEventListener("click", () => renderHistoryView(""));
       }
       // Wire click-to-recopy on each history entry
       contentEl.querySelectorAll("[data-copy]").forEach((el) => {
