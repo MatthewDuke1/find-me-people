@@ -19,6 +19,7 @@ $Files = @(
   "popup.js",
   "onboarding.js",
   "upgrade-cta.js",
+  "whats-new.js",
   "license.js",
   "gpc-inject.js",
   "gpc-rules.json",

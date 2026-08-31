@@ -828,6 +828,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     window.SulaUpgradeCta.maybeShow();
   }
 
+  // What's-new card after an update (never on a fresh install). Skip while the
+  // onboarding overlay is up so a new user isn't shown two things at once.
+  if (
+    window.SulaWhatsNew &&
+    typeof window.SulaWhatsNew.maybeShow === "function" &&
+    !document.getElementById("sula-onb")
+  ) {
+    window.SulaWhatsNew.maybeShow();
+  }
+
   // Side panel master toggle -- persisted to chrome.storage.local so the
   // content scripts on every tab can read it. Default is ON.
   const SP_MASTER_KEY = "fmp_side_panel_enabled";
