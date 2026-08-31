@@ -10,15 +10,16 @@
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-  // [key, label] in display order.
+  // [key, label, placeholder] in display order. The placeholder shows the
+  // expected format/example so an empty field isn't a mystery (#6).
   const FIELDS = [
-    ["firstName", "First name"], ["lastName", "Last name"],
-    ["email", "Email"], ["phone", "Phone"],
-    ["linkedin", "LinkedIn URL"], ["github", "GitHub"], ["website", "Website / portfolio"],
-    ["addressLine1", "Street address"], ["city", "City"], ["state", "State"],
-    ["zip", "Zip / postal"], ["country", "Country"],
-    ["currentCompany", "Current company"], ["currentTitle", "Current title"],
-    ["yearsExperience", "Years of experience"], ["location", "Location"],
+    ["firstName", "First name", "Jane"], ["lastName", "Last name", "Doe"],
+    ["email", "Email", "jane@example.com"], ["phone", "Phone", "+1 555 123 4567"],
+    ["linkedin", "LinkedIn URL", "linkedin.com/in/janedoe"], ["github", "GitHub", "github.com/janedoe"], ["website", "Website / portfolio", "janedoe.com"],
+    ["addressLine1", "Street address", "123 Main St"], ["city", "City", "Austin"], ["state", "State", "TX"],
+    ["zip", "Zip / postal", "78701"], ["country", "Country", "United States"],
+    ["currentCompany", "Current company", "Acme Inc."], ["currentTitle", "Current title", "Product Manager"],
+    ["yearsExperience", "Years of experience", "8"], ["location", "Location", "Austin, TX"],
   ];
 
   function lcGet(k) { return new Promise((r) => chrome.storage.local.get([k], (o) => r(o[k] ?? null))); }
@@ -80,9 +81,9 @@
         <div class="section">
           <div class="section-title">Your details</div>
           <div class="af-grid">
-            ${FIELDS.map(([k, label]) =>
+            ${FIELDS.map(([k, label, ph]) =>
               `<label class="af-field"><span>${esc(label)}</span>
-                 <input class="af-in" data-k="${k}" value="${esc(profile[k] || "")}"></label>`).join("")}
+                 <input class="af-in" data-k="${k}" value="${esc(profile[k] || "")}" placeholder="${esc(ph || "")}"></label>`).join("")}
           </div>
           <div class="af-actions"><button class="action-chip" id="af-save">Save details</button><span id="af-saved" class="af-hint" style="margin:0"></span></div>
         </div>
