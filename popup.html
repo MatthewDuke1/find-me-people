@@ -31,6 +31,19 @@
       outline: none;
     }
     .history-search:focus { border-color: #60a5fa; }
+    /* Custom clear (X) button for the history search (#8). A theme-matched
+       button that works in every browser, unlike the native search clear
+       (Chrome-only, dark-on-dark; absent in Firefox). */
+    .history-search-wrap { position: relative; margin: 10px 16px 6px; }
+    .history-search-wrap .history-search { margin: 0; width: 100%; padding-right: 30px; }
+    /* Hide the native Chrome clear so there aren't two X's. */
+    .history-search::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+    .history-search-clear {
+      position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
+      background: none; border: 0; color: #71717a; cursor: pointer;
+      font-size: 16px; line-height: 1; padding: 2px 4px; font-family: inherit;
+    }
+    .history-search-clear:hover { color: #fafafa; }
     .history-list { padding: 0 16px 12px; max-height: 380px; overflow-y: auto; }
     .history-list::-webkit-scrollbar { width: 4px; }
     .history-list::-webkit-scrollbar-thumb { background: #27272a; border-radius: 4px; }
@@ -178,9 +191,10 @@
       display: block; padding: 8px 12px; background: #111113; border: 1px solid #1e1e1e;
       border-radius: 8px; margin-bottom: 6px; text-decoration: none;
       font-size: 13px; color: #60a5fa; transition: border-color 0.2s;
+      overflow-wrap: anywhere; word-break: break-word;
     }
     .link-item:hover { border-color: #60a5fa; }
-    .link-item .link-label { font-size: 11px; color: #52525b; }
+    .link-item .link-label { font-size: 11px; color: #52525b; overflow-wrap: anywhere; word-break: break-word; }
 
     .empty { padding: 24px 16px; text-align: center; color: #52525b; font-size: 13px; line-height: 1.5; }
     .empty strong { color: #71717a; }
@@ -337,12 +351,17 @@
       transition: background 0.15s; flex-shrink: 0;
     }
     .switch::after {
-      content: ""; position: absolute; top: 2px; left: 2px;
+      content: ""; position: absolute; top: 50%; left: 2px;
       width: 14px; height: 14px; border-radius: 50%; background: #fafafa;
+      /* Center vertically off the midline rather than a hardcoded top offset,
+         so the knob never reads as high/low from sub-pixel rounding (#5). */
+      transform: translateY(-50%);
       transition: transform 0.15s;
     }
     .switch.on { background: #60a5fa; }
-    .switch.on::after { transform: translateX(14px); }
+    /* Keep the vertical centering while sliding across (track 32 − knob 14 −
+       2px each side = 14px of travel). */
+    .switch.on::after { transform: translate(14px, -50%); }
 
     /* Always-visible rate footer link */
     .rate-footer {
