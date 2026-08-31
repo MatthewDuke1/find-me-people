@@ -189,9 +189,19 @@
     const out = contentEl.querySelector("#rs-out");
 
     contentEl.querySelector("#rs-save").addEventListener("click", async () => {
-      await lcSet({ [RESUME_KEY]: ta.value });
       const s = contentEl.querySelector("#rs-saved");
+      // Don't report "Saved ✓" for an empty resume — there's nothing to save,
+      // and a false confirmation is worse than no button response (#1).
+      if (!ta.value.trim()) {
+        s.textContent = "Paste your resume first.";
+        s.style.color = "#c0392b";
+        setTimeout(() => { s.textContent = ""; s.style.color = ""; }, 1800);
+        ta.focus();
+        return;
+      }
+      await lcSet({ [RESUME_KEY]: ta.value });
       s.textContent = "Saved ✓";
+      s.style.color = "";
       setTimeout(() => (s.textContent = ""), 1500);
     });
 
