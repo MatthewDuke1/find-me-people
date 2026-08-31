@@ -55,6 +55,15 @@ chrome.runtime.onInstalled.addListener((details) => {
     chrome.storage.local.set({ sula_rebrand_notice: true });
   }
 
+  // What's-new: on a real version update, record the version the user just
+  // moved TO. whats-new.js shows the notes for that version once, then writes
+  // its own "seen" flag. A fresh install shows nothing — new users get the
+  // onboarding walkthrough instead, not a changelog.
+  if (details.reason === "update") {
+    const v = chrome.runtime.getManifest().version;
+    chrome.storage.local.set({ sula_whatsnew_pending: v });
+  }
+
   // Grandfathering. Everyone who had Sula before it cost anything keeps Pro
   // for good. Two ways to qualify, so nobody slips through:
   //   1. They are running a build older than PRICING_VERSION (install OR
