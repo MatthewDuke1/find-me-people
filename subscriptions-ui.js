@@ -26,6 +26,19 @@
     return true; // soft-launch
   }
 
+  // Both entry points write to sula_subscriptions, but they disagreed on the
+  // field name: Advocacy's manual tracker stores `company`, the statement
+  // import stores `name`. One store, two shapes, so each view rendered the
+  // other's records blank — half of QA SULA-011. Read through this everywhere.
+  function subName(s) {
+    return String((s && (s.company || s.name)) || "").trim();
+  }
+
+  // Where a tracked subscription came from, for the source label QA asked for.
+  function subSource(s) {
+    return (s && s.source) === "statement-import" ? "imported" : "added manually";
+  }
+
   const CADENCE_LABEL = { weekly: "wk", monthly: "mo", quarterly: "qtr", annual: "yr" };
 
   function summaryText(recs) {
@@ -60,12 +73,17 @@
 
   async function pushToGuardian(recs) {
     const existing = (await lcGet(SUBS_KEY)) || [];
-    const seen = new Set(existing.map((s) => (s.name || "").toUpperCase()));
+    // Dedup across BOTH shapes, or an import re-adds something the user
+    // already tracked by hand in Advocacy (QA SULA-011).
+    const seen = new Set(existing.map((s) => subName(s).toUpperCase()));
     let added = 0;
     for (const r of recs) {
       if (seen.has(r.merchant.toUpperCase())) continue;
       existing.push({
+        // Write both keys so either view renders the record correctly,
+        // whichever field it reads.
         name: r.merchant,
+        company: r.merchant,
         amount: r.amount,
         cadence: r.cadence,
         startMs: r.lastChargeMs,
@@ -175,9 +193,45 @@
     });
   }
 
+  // The renewal list every entry point shares (QA SULA-011). Previously the
+  // Subs tab rendered only the import dropzone, so a subscription tracked in
+  // Advocacy was nowhere to be found here and looked lost.
+  async function renderTrackedList(contentEl) {
+    const list = (await lcGet(SUBS_KEY)) || [];
+    if (!list.length) return "";
+    const G = window.SulaSubscriptionGuardian;
+    const now = Date.now();
+    const rows = list.map((s) => {
+      let days = null;
+      try { if (G) days = G.daysUntilRenewal(s, now); } catch (_e) {}
+      return `
+        <div class="sub-row">
+          <div class="sub-main">
+            <div class="sub-name">${esc(subName(s))}</div>
+            <div class="sub-meta">${esc(s.cadence || "")} · ${esc(subSource(s))}</div>
+          </div>
+          <div class="sub-amt">${s.amount ? esc(String(s.amount)) : ""}
+            <div class="sub-yr">${days == null ? "" : "renews in " + days + "d"}</div>
+          </div>
+        </div>`;
+    }).join("");
+    return `
+      <div class="subs-tracked">
+        <div class="section-title">Tracked renewals (${list.length})</div>
+        <div class="subs-list">${rows}</div>
+        <p class="subs-fine">Everything you track — added by hand or imported from a statement — appears here.</p>
+      </div>`;
+  }
+
   async function render(contentEl, ctx) {
     if (!(await gate("Subscriptions"))) return;
     renderDropzone(contentEl, ctx);
+    // Prepend the shared renewal list above the import workflow.
+    const tracked = await renderTrackedList(contentEl);
+    if (tracked) {
+      const wrap = contentEl.querySelector(".subs-wrap");
+      if (wrap) wrap.insertAdjacentHTML("afterbegin", tracked);
+    }
   }
 
   window.SulaSubscriptionsUI = { render };
