@@ -143,8 +143,10 @@
       priorAttemptsClause(ctx) ||
         "Steps I have already taken: (describe any prior contact with the company)",
       desiredClause(ctx),
-      "I am submitting this so the matter is on record and, where applicable, reviewed by the " +
-        "appropriate office.",
+      // Deliberately does not promise review by an "appropriate office": for a
+      // private organisation like the BBB that implies government authority
+      // and enforcement power it does not have (QA SULA-010).
+      "I am submitting this so the matter is on record.",
     ]);
     return { subject, body: assertNoProhibitedClaims(body) };
   }

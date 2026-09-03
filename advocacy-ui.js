@@ -27,6 +27,37 @@
 
   const urgencyColor = (u) => ({ expired: "#52525b", urgent: "#f87171", soon: "#fbbf24", ok: "#4ade80" }[u] || "#a1a1aa");
 
+  // Pure: turn the user's answer into the shape chargeback-guide expects.
+  // `answer` is "no" | "ignored" | "refused"; `days` is what they typed.
+  // Nothing here may default to "contacted" — that assumption is QA SULA-009.
+  function toContactState(answer, days) {
+    const n = parseInt(days, 10);
+    const since = isNaN(n) || n < 0 ? null : n;
+    if (answer === "refused") {
+      return { contactedMerchant: true, merchantRespondedNo: true,
+               merchantIgnoredDays: since === null ? undefined : since };
+    }
+    if (answer === "ignored") {
+      return { contactedMerchant: true, merchantRespondedNo: false,
+               merchantIgnoredDays: since === null ? 0 : since };
+    }
+    return { contactedMerchant: false, merchantRespondedNo: false };
+  }
+
+  // Pure: the sentence a complaint may contain about prior contact. Returns ""
+  // when the user has not contacted the merchant, so the draft simply omits
+  // the claim instead of inventing one.
+  function priorAttemptsSentence(state) {
+    if (!state || !state.contactedMerchant) return "";
+    if (state.merchantRespondedNo) {
+      return "I contacted the company about this charge and they declined to resolve it.";
+    }
+    const d = state.merchantIgnoredDays;
+    return typeof d === "number" && d > 0
+      ? `I contacted the company about this charge ${d} day${d === 1 ? "" : "s"} ago and have not received a resolution.`
+      : "I contacted the company about this charge and have not received a resolution.";
+  }
+
   // Pure: which required facts is a refund letter missing? A letter without
   // the company, amount, or charge date is not merely incomplete — it is not
   // sendable, and generating one silently is QA SULA-006. Returns [] when the
@@ -91,6 +122,22 @@
 
         <div class="section">
           <div class="section-title">If they ignore you: escalate <span class="pro-tag">PRO</span></div>
+          <!-- Ask, never assume (QA SULA-009). These answers decide what the
+               chargeback assessment and the complaint draft may assert. The
+               previous build hardcoded "merchant contacted, ignored 7 days"
+               and printed it as the user's own statement to a bank. -->
+          <div class="adv-row">
+            <label class="adv-lbl">Contacted the merchant?</label>
+            <select class="adv-in adv-sel" id="adv-contacted">
+              <option value="no">Not yet</option>
+              <option value="ignored">Yes — no reply</option>
+              <option value="refused">Yes — they refused</option>
+            </select>
+          </div>
+          <div class="adv-row" id="adv-since-row" hidden>
+            <label class="adv-lbl">Days since you contacted them</label>
+            <input class="adv-in" id="adv-since" type="number" min="0" max="365" placeholder="e.g. 7">
+          </div>
           <div class="adv-row">
             <button class="action-chip" id="adv-chargeback">Is a chargeback appropriate?</button>
           </div>
@@ -127,6 +174,23 @@
       orderId: contentEl.querySelector("#adv-order").value.trim(),
       date: contentEl.querySelector("#adv-date").value.trim(),
     });
+
+    // Reads the merchant-contact answers off the form (QA SULA-009).
+    function merchantContactState() {
+      const sel = contentEl.querySelector("#adv-contacted");
+      const days = contentEl.querySelector("#adv-since");
+      return toContactState(sel ? sel.value : "no", days ? days.value : "");
+    }
+    // The "days since" question only makes sense once contact happened.
+    const contactedSel = contentEl.querySelector("#adv-contacted");
+    if (contactedSel) {
+      const syncSince = () => {
+        const row = contentEl.querySelector("#adv-since-row");
+        if (row) row.hidden = contactedSel.value === "no";
+      };
+      contactedSel.addEventListener("change", syncSince);
+      syncSince();
+    }
 
     let policyOverrideDays = null;
 
@@ -219,7 +283,8 @@
 
     contentEl.querySelector("#adv-chargeback").addEventListener("click", () => {
       const box = contentEl.querySelector("#adv-cb"); box.hidden = false;
-      const r = C.assessReadiness({ contactedMerchant: true, merchantIgnoredDays: 7 });
+      // Real answers, not assumptions (QA SULA-009).
+      const r = C.assessReadiness(merchantContactState());
       const steps = C.issuerSteps("generic");
       box.innerHTML = `<strong>${esc(r.recommendation)}</strong><ul>${steps.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>`;
     });
@@ -228,7 +293,14 @@
       if (!(await gate("Escalation"))) return;
       const entry = E.getCategoryEntry(catSel.value);
       const box = contentEl.querySelector("#adv-esc"); box.hidden = false;
-      const letter = A ? A.buildLetter("regulatory", { company: facts().company, desired: "a full refund", priorAttempts: "I contacted the company and it was not resolved." }) : null;
+      // Only state prior contact if the user told us it happened. A complaint
+      // to a regulator is a statement of fact by the user (QA SULA-009).
+      const st = merchantContactState();
+      const letter = A ? A.buildLetter("regulatory", {
+        company: facts().company,
+        desired: "a full refund",
+        priorAttempts: priorAttemptsSentence(st),
+      }) : null;
       box.innerHTML = `<strong>${esc(entry.agency)}</strong> — <a href="${esc(entry.url)}" target="_blank" rel="noopener">File here</a>
         <div class="adv-dl-sub">${esc(entry.filingTips || "")}</div>` +
         (letter ? `<textarea class="adv-letter" rows="6">${esc(letter.subject + "\n\n" + letter.body)}</textarea>` : "");
