@@ -188,20 +188,39 @@
     const ta = contentEl.querySelector("#rs-text");
     const out = contentEl.querySelector("#rs-out");
 
+    // Clear the empty-resume error as soon as the user starts typing.
+    ta.addEventListener("input", () => {
+      if (!ta.value.trim()) return;
+      const s = contentEl.querySelector("#rs-saved");
+      if (s) { s.textContent = ""; s.classList.remove("rs-error"); s.removeAttribute("role"); }
+      ta.classList.remove("rs-invalid");
+      ta.removeAttribute("aria-invalid");
+    });
+
     contentEl.querySelector("#rs-save").addEventListener("click", async () => {
       const s = contentEl.querySelector("#rs-saved");
       // Don't report "Saved ✓" for an empty resume — there's nothing to save,
       // and a false confirmation is worse than no button response (#1).
       if (!ta.value.trim()) {
-        s.textContent = "Paste your resume first.";
-        s.style.color = "#c0392b";
-        setTimeout(() => { s.textContent = ""; s.style.color = ""; }, 1800);
+        // QA SULA-005 reported "no validation message appeared" even though a
+        // message was being set: it was 11px, inherited a green class, and
+        // erased itself after 1.8s. An error the user can miss is an error
+        // that did not happen. It now persists until they type, is announced
+        // to screen readers, and marks the field.
+        s.textContent = "Paste your resume first — nothing was saved.";
+        s.classList.add("rs-error");
+        s.setAttribute("role", "alert");
+        ta.classList.add("rs-invalid");
+        ta.setAttribute("aria-invalid", "true");
         ta.focus();
         return;
       }
       await lcSet({ [RESUME_KEY]: ta.value });
+      s.classList.remove("rs-error");
+      s.removeAttribute("role");
+      ta.classList.remove("rs-invalid");
+      ta.removeAttribute("aria-invalid");
       s.textContent = "Saved ✓";
-      s.style.color = "";
       setTimeout(() => (s.textContent = ""), 1500);
     });
 

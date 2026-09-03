@@ -58,6 +58,27 @@
       : "I contacted the company about this charge and have not received a resolution.";
   }
 
+  // Pure: which required facts is a refund letter missing? A letter without
+  // the company, amount, or charge date is not merely incomplete — it is not
+  // sendable, and generating one silently is QA SULA-006. Returns [] when the
+  // minimum set is present. Order matters: the first entry gets focus.
+  function missingLetterFields(f) {
+    const out = [];
+    const v = (x) => String((f && x) || "").trim();
+    if (!v(f.company)) out.push({ id: "adv-company", label: "company" });
+    if (!v(f.amount)) out.push({ id: "adv-amount", label: "amount" });
+    if (!v(f.date)) out.push({ id: "adv-date", label: "charge date" });
+    return out;
+  }
+
+  // Pure: "a", "a and b", "a, b and c" — used in the validation message.
+  function listPhrase(items) {
+    const a = (items || []).filter(Boolean);
+    if (a.length <= 1) return a[0] || "";
+    if (a.length === 2) return a[0] + " and " + a[1];
+    return a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
+  }
+
   async function render(contentEl, ctx) {
     const tab = ctx && ctx.tab;
     const host = (ctx && ctx.pageHost) || "";
@@ -91,6 +112,7 @@
             <select class="adv-in adv-sel" id="adv-scenario"></select>
             <button class="action-chip outreach-chip" id="adv-gen">Generate letter</button>
           </div>
+          <div id="adv-msg" class="adv-err" role="alert" aria-live="assertive" hidden></div>
           <textarea class="adv-letter" id="adv-out" placeholder="Your drafted letter appears here — edit before sending." rows="8" hidden></textarea>
           <div class="adv-row" id="adv-letter-actions" hidden>
             <button class="action-chip" id="adv-copy">Copy</button>
@@ -172,6 +194,29 @@
 
     let policyOverrideDays = null;
 
+    // Validation messaging for the letter form. The message PERSISTS until the
+    // user acts — an error that auto-clears after a second is the reason QA
+    // reported "no validation message appeared" for the sibling Resume bug.
+    function showAdvMsg(text) {
+      const el = contentEl.querySelector("#adv-msg");
+      if (!el) return;
+      el.textContent = text;
+      el.hidden = false;
+    }
+    function clearAdvMsg() {
+      const el = contentEl.querySelector("#adv-msg");
+      if (el) { el.textContent = ""; el.hidden = true; }
+      contentEl.querySelectorAll(".adv-invalid").forEach((i) => i.classList.remove("adv-invalid"));
+    }
+    // Typing in any field clears the error state for that field.
+    ["#adv-company", "#adv-amount", "#adv-date"].forEach((sel) => {
+      const el = contentEl.querySelector(sel);
+      if (el) el.addEventListener("input", () => {
+        el.classList.remove("adv-invalid");
+        if (!contentEl.querySelector(".adv-invalid")) clearAdvMsg();
+      });
+    });
+
     function refreshDeadlines() {
       const el = contentEl.querySelector("#adv-deadlines");
       const date = contentEl.querySelector("#adv-date").value.trim();
@@ -207,6 +252,20 @@
       // Refund letter is FREE — it's the deliverable half of the "get refunds"
       // promise, so the headline hook works without paying. (Escalation, cold
       // outreach, statement import, export, CRM stay Pro.)
+
+      // Validate before generating (QA SULA-006): generating from blank inputs
+      // produced an empty output box with no error, so users couldn't tell
+      // what was required or whether generation had failed. A letter missing
+      // the company/amount/date is also materially useless to send.
+      const missing = missingLetterFields(facts());
+      if (missing.length) {
+        showAdvMsg(`Add the ${listPhrase(missing.map((m) => m.label))} before generating.`);
+        const first = contentEl.querySelector("#" + missing[0].id);
+        if (first) { first.focus(); first.classList.add("adv-invalid"); }
+        return;
+      }
+      clearAdvMsg();
+
       const l = T.buildLetter(scenSel.value, facts());
       if (!l) return;
       const out = contentEl.querySelector("#adv-out");

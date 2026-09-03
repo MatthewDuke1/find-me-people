@@ -436,6 +436,11 @@
     .adv-hint,.adv-note{font-size:11px;color:#a1a1aa;margin:4px 0 8px;line-height:1.45}
     .adv-note{background:#111113;border:1px solid #1e1e1e;border-radius:8px;padding:8px 10px}
     .adv-note ul{margin:6px 0 0 16px}.adv-note textarea{margin-top:8px}
+    /* Validation error for the letter form (QA SULA-006). Persistent, not a
+       flash: it stays until the user fixes the field. */
+    .adv-err{font-size:11.5px;color:#f87171;background:rgba(248,113,113,0.08);
+      border:1px solid rgba(248,113,113,0.3);border-radius:8px;padding:7px 10px;margin:2px 0 8px}
+    .adv-in.adv-invalid{border-color:#f87171}
     .adv-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}
     .adv-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px}
     .adv-lbl{font-size:10px;color:#52525b;text-transform:uppercase;letter-spacing:.5px}
@@ -465,6 +470,10 @@
     .rs-ta:focus{border-color:#60a5fa}
     .rs-actions{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
     .rs-saved{font-size:11px;color:#4ade80}
+    /* Empty-resume validation (QA SULA-005): must actually be noticeable —
+       bigger than the success text, red, and it does not auto-erase. */
+    .rs-saved.rs-error{font-size:12px;color:#f87171;font-weight:600}
+    .rs-ta.rs-invalid{border-color:#f87171}
     .rs-out{margin-top:10px}
     .rs-warn{font-size:11.5px;color:#fbbf24;background:rgba(251,191,36,.08);
       border:1px solid rgba(251,191,36,.25);border-radius:8px;padding:8px 10px}
