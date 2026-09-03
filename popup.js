@@ -382,6 +382,27 @@ function provenanceLabel(source) {
   return SULA_SOURCE_LABEL[key] || "this page";
 }
 
+// Sources whose contacts did NOT come from the document the user is looking
+// at — Sula fetched them from elsewhere on the site (sitemap, a discovered
+// contact page). Presenting these as "found on this page" is what made QA
+// SULA-001 look like a stale cache: on a page with zero contacts, seven
+// contacts fetched from other URLs were still shown as if they were here, and
+// Rescan "failed" because it just re-ran the same off-page fetch.
+// (Declared inside the function so it unit-tests in isolation.)
+
+// Pure: was this contact found on the current document?
+function isOnPageContact(c) {
+  const OFF_PAGE = ["sitemap", "discovered-page", "fetch"];
+  return OFF_PAGE.indexOf(String((c && c.source) || "").replace(/:$/, "")) === -1;
+}
+
+// Pure: split a contact list into what's on this page vs elsewhere on the site.
+function splitByProvenance(list) {
+  const onPage = [], offPage = [];
+  (list || []).forEach((c) => (isOnPageContact(c) ? onPage : offPage).push(c));
+  return { onPage, offPage };
+}
+
 // Build a flat contact list from a content-script scan response.
 function normalizeScanContacts(data, hostname) {
   const out = [];
@@ -1049,9 +1070,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     // not zero we say exactly what was fetched rather than hiding it.
     html += renderNetTransparencyHtml(data.netLog);
 
-    // Status bar
-    if (total > 0) {
-      html += `<div class="status"><span class="dot dot-green"></span> Found ${total} contact${total > 1 ? "s" : ""} on this page</div>`;
+    // Status bar. Report on-page and off-page counts separately: contacts
+    // Sula fetched from a sitemap or a discovered contact page are real, but
+    // they are not on the document the user is looking at, and saying so was
+    // the actual defect behind QA SULA-001.
+    const onPageCount =
+      splitByProvenance(emails).onPage.length + splitByProvenance(phones).onPage.length;
+    const offPageCount = total - onPageCount;
+    if (onPageCount > 0) {
+      html += `<div class="status"><span class="dot dot-green"></span> Found ${onPageCount} contact${onPageCount > 1 ? "s" : ""} on this page` +
+        (offPageCount > 0 ? ` <span class="net-what">+ ${offPageCount} elsewhere on this site</span>` : "") +
+        `</div>`;
+    } else if (offPageCount > 0) {
+      html += `<div class="status"><span class="dot dot-yellow"></span> No contacts on this page &mdash; ${offPageCount} found elsewhere on this site</div>`;
     } else if (links.length > 0) {
       html += `<div class="status"><span class="dot dot-yellow"></span> No direct contacts found, but support pages detected</div>`;
     } else {
@@ -1093,7 +1124,7 @@ document.addEventListener("DOMContentLoaded", async () => {
               <div class="value">${escVal}</div>
               <div class="meta">
                 <span class="email-quality q-${q.tone}" title="Email-quality hint (read locally from the address)">${q.label}</span>
-                <span class="provenance" title="Found live on this page just now — read from the page, not a stored database">via ${provE}</span>
+                <span class="provenance" title="${isOnPageContact(e) ? 'Found live on this page just now — read from the page, not a stored database' : 'Found elsewhere on this site (fetched just now), not on the page you are viewing'}">via ${provE}</span>
                 <span class="score ${scoreClass}">${scoreLabel}</span>
                 <span class="verify-result" data-verify-result="${id}"></span>
               </div>
@@ -1133,7 +1164,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             <div class="contact-main" data-copy="${escVal}" data-copy-type="phone" data-copy-score="${p.score}">
               <div class="value">${escVal}</div>
               <div class="meta">
-                <span class="provenance" title="Found live on this page just now — read from the page, not a stored database">via ${provP}</span>
+                <span class="provenance" title="${isOnPageContact(p) ? 'Found live on this page just now — read from the page, not a stored database' : 'Found elsewhere on this site (fetched just now), not on the page you are viewing'}">via ${provP}</span>
                 <span class="score ${scoreClass}">${scoreLabel}</span>
               </div>
             </div>
