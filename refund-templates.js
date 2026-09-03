@@ -38,8 +38,16 @@
         .replace(/{{ORDER_ID}}/g, order)
         .replace(/{{AMOUNT}}/g, amount)
         .replace(/{{DATE}}/g, date),
+      // Carry the order reference even when the chosen template's opening does
+      // not mention it. QA supplied order QA-001 and it was dropped from the
+      // letter entirely, which makes the request harder for the merchant to
+      // action (SULA-008). Only emitted when the user actually gave one.
+      ...(f.orderId ? [`Order/reference: ${f.orderId}`] : []),
       "",
-      asks,
+      asks
+        .replace(/{{ORDER_ID}}/g, order)
+        .replace(/{{AMOUNT}}/g, amount)
+        .replace(/{{DATE}}/g, date),
       "",
       ...(leverage.length ? [leverage.join(" "), ""] : []),
       "Please confirm the refund in writing. I can be reached at {{YOUR_EMAIL}}.",
@@ -112,8 +120,15 @@
         base(
           f,
           "Charge after cancellation — refund request",
-          "I cancelled this subscription before the renewal on {{DATE}} but was still charged {{AMOUNT}}.",
-          "Please refund the post-cancellation charge and confirm the account is closed.",
+          // The only date collected is the CHARGE date. The previous wording
+          // ("before the renewal on {{DATE}}") presented it as the renewal
+          // date, so the letter asserted a cancellation timeline the user
+          // never gave (QA SULA-008). State only what we actually know.
+          "I cancelled this subscription, but was still charged {{AMOUNT}} on {{DATE}}.",
+          // "confirm the account is closed" was an instruction the user never
+          // gave — asking a merchant to close an account is a materially
+          // different request from asking for a refund (QA SULA-008).
+          "Please refund the post-cancellation charge and confirm the cancellation date you have on record.",
           ["negative_option", "chargeback", "cfpb"]
         ),
     },
