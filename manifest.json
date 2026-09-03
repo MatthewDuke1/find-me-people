@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sula - Contacts, Refunds, Shopping",
-  "version": "2.6.4",
+  "version": "2.6.5",
   "description": "Contacts, refunds, and subscriptions - handled on the page you're on. 100% local. No account, no tracking.",
   "permissions": [
     "activeTab",
