@@ -115,22 +115,23 @@
       }</div>
 
       ${report.suggestions.length ? (pro ? `
-        <div class="section-title" style="margin-top:14px">Where to close them</div>
+        <div class="section-title" style="margin-top:14px">Which of your bullets to edit</div>
         <div class="rs-hint">Sula rewrites nothing on its own. Each gap points at one of your own bullets &mdash; use it only if it is true of the work you did.</div>
         ${report.suggestions.map((s) => `
           <div class="rs-sug">
             <div class="rs-term">${esc(s.term)}</div>
             <div class="rs-act">${esc(s.action)}</div>
             ${s.hostBullet
-              ? `<div class="rs-host">${esc(s.hostBullet)}</div>
-                 <button class="rs-copy" data-copy="${esc(s.hostBullet)}">Copy this bullet</button>`
+              ? `<div class="rs-hint" style="margin:4px 0 2px">Your bullet, unchanged &mdash; edit it yourself only if the term is true of this work:</div>
+                 <div class="rs-host">${esc(s.hostBullet)}</div>
+                 <button class="rs-copy" data-copy="${esc(s.hostBullet)}">Copy your original bullet</button>`
               : ""}
           </div>`).join("")}
       ` : `
-        <div class="section-title" style="margin-top:14px">Where to close them <span class="pro-tag">PRO</span></div>
+        <div class="section-title" style="margin-top:14px">Which of your bullets to edit <span class="pro-tag">PRO</span></div>
         <div class="rs-locked">
           <div class="rs-locked-lead">Sula found <strong>${report.suggestions.length}</strong> ${report.suggestions.length === 1 ? "bullet" : "bullets"} in your resume that could carry ${report.suggestions.length === 1 ? "this gap" : "these gaps"}.</div>
-          <div class="rs-hint" style="margin:6px 0 8px">Pro shows which of your own bullets to rewrite for each missing term. It never writes the claim for you &mdash; you decide what is true.</div>
+          <div class="rs-hint" style="margin:6px 0 8px">Pro points you to the bullet in your own resume that is the closest fit for each missing term. Sula never writes the claim for you &mdash; you decide what is true of the work you did.</div>
           <button class="action-chip outreach-chip" id="rs-upgrade">Unlock rewrite guidance</button>
         </div>
       `) : ""}
@@ -140,7 +141,7 @@
     host.querySelectorAll("[data-copy]").forEach((b) => {
       b.addEventListener("click", () => {
         navigator.clipboard.writeText(b.getAttribute("data-copy")).then(
-          () => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy this bullet"), 1400); },
+          () => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy your original bullet"), 1400); },
           () => { b.textContent = "Press Ctrl+C"; }
         );
       });

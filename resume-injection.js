@@ -84,15 +84,61 @@
 
   // Pure: which extracted terms already appear in the resume?
   // Substring match on normalized text, so "roadmaps" covers "roadmap".
+  // Reduce a word to a crude stem so morphological variants collapse together.
+  // Exact-substring matching alone reported "automated", "analyze" and
+  // "communicate" as gaps on a resume that said "automation", "analysis" and
+  // "communication" (QA SULA-013) — a false gap list is worse than no gap
+  // list, because the applicant edits a resume that was already fine.
+  //
+  // Deliberately small and rule-based, not a real Porter stemmer: it only has
+  // to collapse the endings that actually show up in job postings, and a
+  // predictable stemmer is easier to reason about than an aggressive one.
+  function stemWord(w) {
+    let s = String(w || "").toLowerCase().replace(/[^a-z]/g, "");
+    if (s.length <= 4) return s;
+    s = s.replace(/z/g, "s"); // analyze / analyse -> one spelling
+    const RULES = [
+      [/sis$/, "s"],          // analysis   -> analys
+      [/ations?$/, "at"],     // automation -> automat
+      [/ational$/, "at"],
+      [/ative$/, "at"],
+      [/ements?$/, ""],       // measurement -> measur
+      [/ments?$/, ""],
+      [/ically$/, ""], [/ical$/, ""], [/ally$/, ""],
+      [/ities$/, ""], [/ity$/, ""],
+      [/ances?$/, ""], [/ences?$/, ""],
+      [/ings?$/, ""],         // reporting  -> report
+      [/ed$/, ""],            // automated  -> automat
+      [/es$/, ""], [/s$/, ""],
+      [/e$/, ""],             // communicate-> communicat, analyse -> analys
+    ];
+    for (const [re, rep] of RULES) {
+      if (re.test(s)) {
+        const t = s.replace(re, rep);
+        if (t.length >= 4) { s = t; break; }
+      }
+    }
+    return s;
+  }
+
+  // Stem every word in a phrase so multi-word terms match too.
+  function stemPhrase(p) {
+    return String(p || "").split(/\s+/).filter(Boolean).map(stemWord).join(" ");
+  }
+
   function coverage(keywords, resumeText) {
     const r = norm(resumeText);
+    const rStem = " " + stemPhrase(r) + " ";
     const covered = [], missing = [];
     for (const k of keywords || []) {
       const term = norm(k.term);
       const hit = r.includes(term) ||
         (term.endsWith("s") && r.includes(term.slice(0, -1))) ||
         r.includes(term.replace(/-/g, " ")) ||
-        r.includes(term.replace(/\s/g, "-"));
+        r.includes(term.replace(/\s/g, "-")) ||
+        // Morphology fallback (SULA-013). Padded with spaces so a stem only
+        // matches on word boundaries and can't hit inside a longer word.
+        rStem.includes(" " + stemPhrase(term) + " ");
       (hit ? covered : missing).push(k);
     }
     const total = (keywords || []).length;
