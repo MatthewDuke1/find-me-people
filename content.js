@@ -42,8 +42,26 @@
     } catch (_) {}
   }
 
-  const PHONE_REGEX = /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
-  const INTL_PHONE_REGEX = /\+\d{1,3}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{2,4}[-.\s]?\d{2,4}[-.\s]?\d{0,4}/g;
+  // Digit-boundary lookarounds are load-bearing, not cosmetic (QA SULA-002).
+  // Without them the 10-digit body of this pattern happily matches a window
+  // *inside* a longer digit run: "Order 20260829123456" yielded the phone
+  // "(202) 608-2912". (?<!\d) forces the match to start at a non-digit
+  // boundary and (?!\d) forbids trailing digits, so a 14/16-digit identifier
+  // can no longer produce a phone at any offset.
+  const PHONE_REGEX = /(?<!\d)(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}(?!\d)/g;
+  const INTL_PHONE_REGEX = /(?<!\d)\+\d{1,3}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{2,4}[-.\s]?\d{2,4}[-.\s]?\d{0,4}(?!\d)/g;
+
+  // Pure: does the text immediately before a phone candidate label it as an
+  // identifier rather than a phone? Catches what the boundary guard cannot —
+  // an id formatted exactly like a phone ("Order #: 202-608-2912").
+  // Self-contained (regex declared inside) so it unit-tests in isolation.
+  function isLabeledIdentifier(before) {
+    if (!before) return false;
+    const LABEL =
+      /\b(?:order|invoice|reference|ref|confirmation|conf|tracking|account|acct|customer|case|ticket|transaction|txn|receipt|policy|claim|member|sku|isbn|ein|po)\b[\s:#.\-]*(?:no\.?|num(?:ber)?|#)?[\s:#.\-]*$/i;
+    // Only the last ~28 chars can plausibly be this number's label.
+    return LABEL.test(String(before).slice(-28));
+  }
 
   // Common email obfuscation patterns that scrapers don't recognize but a
   // human reader does. We pre-process text through this normalizer
@@ -3082,6 +3100,12 @@
       const cleaned = phone.replace(/[^\d+]/g, "");
       const key = phoneKey(cleaned);
       if (!seen.has(key) && cleaned.length >= 10 && cleaned.length <= 15) {
+        // Reject identifiers formatted like phones ("Order #: 202-608-2912").
+        // The regex boundary guard catches digits embedded in a longer run;
+        // this catches a correctly-formatted number that a label marks as an
+        // order/invoice/reference id. (QA SULA-002.)
+        const idx = text.indexOf(phone);
+        if (idx > 0 && isLabeledIdentifier(text.slice(Math.max(0, idx - 28), idx))) return;
         if (opts.requireProximityAnchor) {
           const surrounding = surroundingTextFor(text, phone, 100);
           if (!hasPhoneProximityAnchor(surrounding)) return;
