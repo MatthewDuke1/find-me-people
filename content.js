@@ -63,6 +63,28 @@
     return LABEL.test(String(before).slice(-28));
   }
 
+  // Pure: is this address placeholder/boilerplate noise rather than a real
+  // contact? One canonical rule, because having several near-copies of this
+  // test is exactly what produced QA SULA-003: the visible-text paths filtered
+  // "example.com" while the mailto path filtered nothing, so on the same page
+  // support@example.com vanished and billing@example.com came back. Whatever
+  // the rule is, every extraction path has to apply the same one.
+  function isPlaceholderEmail(email) {
+    const e = String(email || "").toLowerCase();
+    if (!e) return true;
+    // RFC 2606 reserved domains — only ever documentation/sample addresses.
+    if (e.indexOf("@example.") !== -1) return true;
+    if (/@(?:test|invalid|localhost)\.(?:com|org|net|edu)$/.test(e)) return true;
+    // Unattended mailboxes: real addresses, but never a way to reach a human.
+    if (e.indexOf("noreply") !== -1 || e.indexOf("no-reply") !== -1 ||
+        e.indexOf("donotreply") !== -1) return true;
+    // Asset/build noise that happens to look like an address (sprite@2x.png).
+    if (e.indexOf("@2x") !== -1 || e.indexOf("@3x") !== -1) return true;
+    // Vendor telemetry addresses injected by page tooling.
+    if (e.indexOf("sentry.io") !== -1 || e.indexOf("wixpress.com") !== -1) return true;
+    return false;
+  }
+
   // Common email obfuscation patterns that scrapers don't recognize but a
   // human reader does. We pre-process text through this normalizer
   // BEFORE running EMAIL_REGEX, so a line like
@@ -220,7 +242,8 @@
     // 1. Scan mailto: and tel: links (highest confidence)
     document.querySelectorAll('a[href^="mailto:"]').forEach((el) => {
       const email = cleanMailtoEmail(el.href);
-      if (!seen.has(email) && email.includes("@")) {
+      // Same placeholder rule as every other path (QA SULA-003).
+      if (!seen.has(email) && email.includes("@") && !isPlaceholderEmail(email)) {
         seen.add(email);
         const context = getContext(el);
         const score = scoreEmail(email, context);
@@ -928,7 +951,7 @@
       if (
         email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
         email.includes("sentry") || email.includes("webpack") ||
-        email.includes("example.com") || email.includes("@2x") ||
+        isPlaceholderEmail(email) ||
         email.includes("noreply") || email.includes("no-reply")
       ) return;
       seen.add(email);
@@ -1102,7 +1125,7 @@
         if (
           email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
           email.includes("sentry") || email.includes("webpack") ||
-          email.includes("example.com") || email.includes("@2x") ||
+          isPlaceholderEmail(email) ||
           email.includes("noreply") || email.includes("no-reply") ||
           looksLikeBleedEmail(email)
         ) return;
@@ -1518,7 +1541,7 @@
         if (seen.has(email)) return;
         // Filter the obvious form-noise: example.com placeholder leaked
         // into a value, our own scanPageGlobals-style noreply, etc.
-        if (email.includes("example.com") || email.includes("noreply") || email.includes("no-reply")) return;
+        if (isPlaceholderEmail(email) || email.includes("no-reply")) return;
         seen.add(email);
         const ctx = "form field";
         results.emails.push({
@@ -1620,7 +1643,7 @@
         if (
           email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
           email.includes("sentry") || email.includes("webpack") ||
-          email.includes("example.com") || email.includes("noreply") ||
+          isPlaceholderEmail(email) ||
           email.includes("no-reply")
         ) return;
         seen.add(email);
@@ -1843,7 +1866,7 @@
         const emailMatch = value.match(EMAIL_REGEX);
         if (emailMatch) {
           const email = trimDigitPrefixBleed(emailMatch[0].toLowerCase());
-          if (!seen.has(email) && !email.includes("example.com") && !email.includes("noreply") && !email.includes("no-reply")) {
+          if (!seen.has(email) && !isPlaceholderEmail(email)) {
             seen.add(email);
             const ctx = `footer (${label})`;
             results.emails.push({
@@ -2752,7 +2775,7 @@
         if (
           email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
           email.includes("sentry") || email.includes("webpack") ||
-          email.includes("example.com") || email.includes("noreply") ||
+          isPlaceholderEmail(email) ||
           email.includes("no-reply")
         ) return;
         seen.add(email);
@@ -3021,7 +3044,7 @@
       if (
         email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
         email.includes("sentry") || email.includes("webpack") ||
-        email.includes("example.com") || email.includes("noreply") ||
+        isPlaceholderEmail(email) ||
         email.includes("no-reply")
       ) return;
       seen.add(email);
@@ -3079,9 +3102,8 @@
         !email.endsWith(".png") &&
         !email.endsWith(".jpg") &&
         !email.endsWith(".svg") &&
-        !email.includes("sentry") &&
         !email.includes("webpack") &&
-        !email.includes("example.com") &&
+        !isPlaceholderEmail(email) &&
         !looksLikeBleedEmail(email)
       ) {
         seen.add(email);
