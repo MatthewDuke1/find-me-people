@@ -24,10 +24,33 @@
   "use strict";
 
   // ---- CSV: tokenizer that respects quoted fields (commas, quotes inside) ----
-  function parseCsvRows(text) {
+  // Pure: pick the delimiter a file actually uses. Real exports are not all
+  // comma-separated — European banks ship semicolons and some tools ship tabs,
+  // and both were rejected as "not a bank CSV" (QA SULA-012). Decided on the
+  // header line by majority count, ignoring anything inside quotes.
+  function detectDelimiter(text) {
+    const firstLine = String(text || "").replace(/^﻿/, "").split(/\r?\n/)[0] || "";
+    const counts = { ",": 0, ";": 0, "\t": 0 };
+    let inQ = false;
+    for (const ch of firstLine) {
+      if (ch === '"') { inQ = !inQ; continue; }
+      if (!inQ && Object.prototype.hasOwnProperty.call(counts, ch)) counts[ch]++;
+    }
+    let best = ",", bestN = 0;
+    for (const d of Object.keys(counts)) if (counts[d] > bestN) { bestN = counts[d]; best = d; }
+    return bestN > 0 ? best : ",";
+  }
+
+  function parseCsvRows(text, delim) {
     const rows = [];
     let row = [], field = "", i = 0, inQuotes = false;
-    const s = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const D = delim || ",";
+    // Strip a UTF-8 BOM. Excel and many bank exports prepend one, and it is
+    // not whitespace — so "﻿Date" failed /^date$/ and the entire file was
+    // rejected as unrecognised (QA SULA-012).
+    const s = String(text || "")
+      .replace(/^﻿/, "")
+      .replace(/\r\n/g, "\n").replace(/\r/g, "\n");
     while (i < s.length) {
       const c = s[i];
       if (inQuotes) {
@@ -38,7 +61,7 @@
         field += c; i++; continue;
       }
       if (c === '"') { inQuotes = true; i++; continue; }
-      if (c === ",") { row.push(field); field = ""; i++; continue; }
+      if (c === D) { row.push(field); field = ""; i++; continue; }
       if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; i++; continue; }
       field += c; i++;
     }
@@ -94,7 +117,7 @@
   // Parse a CSV bank export into normalized transactions:
   //   { dateMs, desc, amount }  (amount negative = money out / a charge)
   function parseCsv(text) {
-    const rows = parseCsvRows(text);
+    const rows = parseCsvRows(text, detectDelimiter(text));
     if (rows.length < 2) return { transactions: [], error: "no_rows" };
 
     // Find the header row: the first row where we can locate a date + desc.
