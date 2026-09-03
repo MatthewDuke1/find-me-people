@@ -22,6 +22,16 @@
 
   // version -> { headline, items[] }. Newest first. Keep copy plain and short.
   const NOTES = {
+    "2.6.5": {
+      headline: "Accuracy fixes from a 20-tester QA round",
+      items: [
+        "Order and invoice numbers are no longer mistaken for phone numbers.",
+        "Contacts found elsewhere on a site are labelled as such, not as being on the page you're viewing.",
+        "Refund letters use only the details you enter — no invented dates, and your order number is included.",
+        "Resume matching understands word endings, so \"automation\" now covers \"automated\".",
+        "Bank imports accept plain Date/Description/Amount CSVs.",
+      ],
+    },
     "2.6.4": {
       headline: "New: Checkout Guard",
       items: [
