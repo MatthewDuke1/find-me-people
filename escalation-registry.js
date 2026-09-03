@@ -89,10 +89,14 @@
     {
       id: "general_retail",
       label: "General retail, e-commerce, services",
-      agency: "Better Business Bureau (BBB)",
+      agency: "Better Business Bureau (BBB) — private nonprofit, not a regulator",
       url: "https://www.bbb.org/file-a-complaint",
       whatTheyHandle: "Product/service disputes, warranty issues, refund disputes with a registered business.",
-      filingTips: "BBB complaints go to the business and are public — often prompts faster resolution than direct contact alone.",
+      // QA SULA-010: the BBB is a private marketplace organisation with no
+      // enforcement power. Saying so is the difference between a user
+      // expecting mediation and a user expecting a government investigation.
+      isRegulator: false,
+      filingTips: "The BBB is a private nonprofit, not a government agency — it has no enforcement power. Complaints are forwarded to the business and published publicly, which often prompts a faster resolution than direct contact alone. For enforcement, use a government regulator (e.g. CFPB for financial products, FTC, or your state attorney general).",
       lastVerified: "2026-07-31",
     },
     {
