@@ -897,6 +897,29 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  // Passive-ledger master toggle. Default is ON, same `!== false` convention
+  // as the two switches above.
+  //
+  // This switch is the counterweight to capturing by default: it is in the
+  // same place as every other master switch, it is not behind Pro, and the
+  // ledger view it controls carries a one-click delete-all. Capture-by-default
+  // is only defensible while turning it off stays this easy to find.
+  const LEDGER_KEY = "sula_ledger_enabled";
+  const ledgerToggle = document.getElementById("ledger-toggle");
+  if (ledgerToggle && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get([LEDGER_KEY], (r) => {
+      const on = r[LEDGER_KEY] !== false;
+      ledgerToggle.classList.toggle("on", on);
+      ledgerToggle.setAttribute("aria-checked", on ? "true" : "false");
+    });
+    ledgerToggle.addEventListener("click", () => {
+      const willBeOn = !ledgerToggle.classList.contains("on");
+      ledgerToggle.classList.toggle("on", willBeOn);
+      ledgerToggle.setAttribute("aria-checked", willBeOn ? "true" : "false");
+      chrome.storage.local.set({ [LEDGER_KEY]: willBeOn });
+    });
+  }
+
   // View tab switching (On this page <-> History). The "now" view is the
   // existing scan render; "history" lazy-renders from chrome.storage.local
   // whenever the tab is selected (cheap, history is < 50 entries).
@@ -913,8 +936,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       else if (v === "autofill" && window.SulaAutofillUI) {
         window.SulaAutofillUI.render(contentEl, { tab });
       }
-      else if (v === "subs" && window.SulaSubscriptionsUI) {
-        window.SulaSubscriptionsUI.render(contentEl, { tab });
+      else if (v === "subs") {
+        // The ledger renders AFTER SubscriptionsUI, because that call replaces
+        // contentEl's markup, and it renders even when the Pro gate blocks the
+        // import: a user who is being captured from must be able to see and
+        // delete the result whether or not they have paid.
+        (async () => {
+          if (window.SulaSubscriptionsUI) {
+            await window.SulaSubscriptionsUI.render(contentEl, { tab });
+          }
+          if (window.SulaLedgerUI) await window.SulaLedgerUI.render(contentEl);
+        })();
       }
       else if (v === "privacy" && window.SulaPrivacyGuardUI) {
         window.SulaPrivacyGuardUI.render(contentEl, { tab });

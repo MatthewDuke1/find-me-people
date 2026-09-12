@@ -14,7 +14,7 @@
 const LEDGER_ALARM = "sula-renewal-check";
 const RENEWAL_HORIZON_DAYS = 5;
 const KEY_PREFIX = "sula_ledger_";
-const OPT_IN_KEY = "sula_ledger_optin";
+const ENABLED_KEY = "sula_ledger_enabled";
 
 chrome.runtime.onInstalled.addListener(() => {
   // Once a day is right for this: renewal dates move in days, and a tighter
@@ -38,10 +38,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (!alarm || alarm.name !== LEDGER_ALARM) return;
   chrome.storage.local.get(null, (all) => {
     if (chrome.runtime.lastError) return;
-    if (!all || !all[OPT_IN_KEY]) return;        // ledger is off — do nothing
+    if (!all || all[ENABLED_KEY] === false) return;   // user turned the ledger off
     const entries = [];
     for (const k of Object.keys(all)) {
-      if (k.indexOf(KEY_PREFIX) === 0 && k !== OPT_IN_KEY && all[k]) entries.push(all[k]);
+      if (k.indexOf(KEY_PREFIX) === 0 && k !== ENABLED_KEY && all[k]) entries.push(all[k]);
     }
     const due = renewalsDueSoon(entries, Date.now(), RENEWAL_HORIZON_DAYS);
     // Store the count for the panel to read, and mark the badge so the user

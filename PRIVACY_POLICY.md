@@ -39,9 +39,49 @@ Sula uses `chrome.storage.local`, kept entirely on your device. Nothing here is 
 | Applications | Jobs you've tracked with the apply-click contact finder |
 | Email-verify cache | Results of email checks you've run, so the same address isn't re-checked |
 | License + supporter flags | Your Pro license status and early-supporter grandfathering flag |
+| Purchase ledger | What you bought, read from order-confirmation and billing pages you visit: merchant, amount, order reference, date, and renewal terms when the page states them. **On by default.** See the dedicated section below. |
 | Opt-in flags | Whether you've turned on optional features like the email MX check |
 
 You can clear copy history from the History tab, and remove autofill, subscription, and application data from their respective tabs, at any time.
+
+## The purchase ledger (on by default)
+
+Sula is already on the page when you buy something, so instead of asking you to
+export a bank statement, it notes the purchase as it happens. That record is what
+makes refund deadlines date themselves and what lets Sula warn you before a
+subscription renews rather than after it charges you.
+
+**This is on when you install Sula.** You can turn it off with the *Remember my
+purchases* switch at the bottom of the popup, next to the side-panel and
+Global Privacy Control switches.
+
+What it records, from pages you were already visiting:
+
+- The merchant, the amount, the order or confirmation number, and the date.
+- Renewal wording when the page states it ("renews monthly"), so Sula can tell
+  you a charge is coming.
+
+What it never records:
+
+- **Card numbers, CVVs, or anything payment-instrument shaped.** If Sula sees
+  anything card-like on the page it abandons the capture entirely rather than
+  trying to strip it out.
+- Anything at all in a private/incognito window.
+- Anything on a page where it cannot identify a merchant.
+
+Where it goes: nowhere. It is written to `chrome.storage.local` on your device
+and is never uploaded, synced, backed up, or sent to us — we have no server to
+send it to. It is not used for analytics, profiling, advertising, or "improving
+the product."
+
+How long it stays: unconfirmed checkouts are discarded after 72 hours, ordinary
+purchases after about 18 months (past every dispute window), and subscriptions
+stay while they are active. At most 500 entries are kept.
+
+Deleting it: the Subs tab lists everything the ledger holds and has a **delete
+all** link that erases it in one click, with no confirmation maze. Turning the
+switch off stops new capture; deleting and turning off are separate choices, and
+doing one does not do the other.
 
 ## What the extension transmits
 

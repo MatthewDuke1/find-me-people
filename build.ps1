@@ -44,6 +44,7 @@ $Files = @(
   "checkout-signals.js",
   "ledger-extract.js",
   "ledger-store.js",
+  "ledger-ui.js",
   "checkout-guard.js",
   "PRIVACY_POLICY.md",
   "README.md"

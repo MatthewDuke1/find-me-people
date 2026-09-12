@@ -37,7 +37,7 @@ answer on every feature, not a teaser.
 | **Refund & complaint letters** | Seven scenarios (unauthorized charge, duplicate charge, defective, not as described, free-trial auto-renewal, cancelled-but-charged, price drop), each written with the right leverage — FCBA, the merchant's own policy, chargeback, FTC negative-option, CFPB. |
 | **Chargeback guidance** | Tells you whether a chargeback is the right move *yet* (often: write to the merchant first), then the exact dispute steps for Chase, Amex, Bank of America, Citi, Capital One, or Wells Fargo. |
 | **Subscription Guardian** | Tracks renewal dates, warns before a free trial converts, and drafts the cancellation. |
-| **Passive ledger** | Opt-in. Remembers what you bought from the order and billing pages you were already visiting, so refund deadlines date themselves and subscriptions appear without importing a bank statement. Stored only on your device; nothing is uploaded. |
+| **Passive ledger** | On by default; one switch in the popup turns it off, and the Subs tab has a one-click delete-all. Remembers what you bought from the order and billing pages you were already visiting, so refund deadlines date themselves and subscriptions appear without importing a bank statement. Stored only on your device; nothing is uploaded. |
 | **Renewal alerts** | A warning before a charge lands, not after — driven by the ledger, with the cancellation contact already found. |
 | **Statement import** | CSV / OFX / QFX from your own bank, parsed in the browser. Now the power-user path rather than the price of entry. |
 | **Regulatory escalation drafts** | Complaint letters aimed at the right agency. |
