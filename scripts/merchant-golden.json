@@ -1,0 +1,53 @@
+{
+  "_comment": [
+    "Pinned regression contract for the generated merchant table.",
+    "",
+    "This file is the gate. scripts/validate-merchant-table.mjs refuses to promote",
+    "a generated candidate that fails any case here, and tests/cases/34-merchant-table.test.js",
+    "runs the same cases against the table that is actually committed. A model",
+    "regenerating the table unattended can therefore widen coverage but cannot",
+    "silently regress a descriptor we already know the right answer for.",
+    "",
+    "Every case below is a real failure mode observed in the pre-table parser,",
+    "not a hypothetical."
+  ],
+
+  "cases": [
+    {
+      "desc": "PAYPAL *SPOTIFY",
+      "expect": "Spotify",
+      "why": "Over-collapse. The pre-table parser split on '*' and returned 'PAYPAL', so every PayPal-routed subscription merged into one fake merchant with a meaningless median amount."
+    },
+    {
+      "desc": "PAYPAL *HULU",
+      "expect": "Hulu",
+      "why": "Same bug, second victim. Proves the aggregator strip generalises rather than special-casing Spotify."
+    },
+    {
+      "desc": "SPOTIFY P34F9G8 NEW YORK NY",
+      "expect": "Spotify",
+      "why": "Under-collapse. The txn-id regex required a leading digit, so 'P34F9G8' survived. One subscription became N singletons, each dropped by the list.length < 2 guard -- a silent miss, the worst kind."
+    },
+    { "desc": "SPOTIFY*USA", "expect": "Spotify" },
+    { "desc": "NETFLIX.COM", "expect": "Netflix" },
+    { "desc": "ADOBE  *CREATIVE CLOUD", "expect": "Adobe" },
+    { "desc": "AMZN Mktp US*2H4KJ", "expect": "Amazon" },
+    {
+      "desc": "SQ *BLUE BOTTLE",
+      "expect": "BLUE BOTTLE",
+      "why": "An unknown merchant behind a known aggregator. The aggregator is stripped, then the existing regex pass handles the remainder -- this pins that the fallback path stays wired and still returns uppercase."
+    }
+  ],
+
+  "mustDiffer": [
+    ["PAYPAL *SPOTIFY", "PAYPAL *HULU"],
+    ["PAYPAL *NYTIMES", "PAYPAL *SPOTIFY"],
+    ["SQ *BLUE BOTTLE", "SQ *COFFEE BAR"],
+    ["TST* CHIPOTLE", "TST* SWEETGREEN"]
+  ],
+
+  "mustMatch": [
+    ["SPOTIFY P34F9G8 NEW YORK NY", "SPOTIFY P99X1Q2 NEW YORK NY"],
+    ["PAYPAL *SPOTIFY", "SPOTIFY*USA"]
+  ]
+}

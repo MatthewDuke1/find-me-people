@@ -9,6 +9,28 @@ once signed. Same unified package as Chrome — one zip, both stores.
 
 ---
 
+## v2.6.6 — Subscription detection stops losing merchants
+
+Statement import grouped charges by a pile of hand-written regexes, which failed
+three different ways on real bank descriptors:
+
+- **`PAYPAL *SPOTIFY` became `PAYPAL`.** Every PayPal-routed subscription merged
+  into one entry with a meaningless median amount.
+- **`SPOTIFY P34F9G8 NEW YORK NY` kept the transaction id**, so one subscription
+  split into a separate merchant per month and was then discarded for having
+  only a single charge. A silent miss — the subscription simply never appeared.
+- **`SQ *BLUE BOTTLE` came back unchanged**, because `SQ` was stripped as a state
+  code and the empty result fell back to the raw descriptor.
+
+Sula now ships a merchant table — payment-processor prefixes plus canonical names
+for 335 recurring billers — and consults it before the regex pass, which is
+unchanged and still handles everything the table does not recognise.
+
+**The table is static data, generated on a maintainer's machine and shipped in
+the package.** The extension makes no model call and no network call, needs no
+API key, and works offline. A statement is still parsed entirely in your browser
+and still never leaves it.
+
 ## v2.1.0 — Pro pricing is live
 
 - **Paid Pro tier**, via LemonSqueezy (Merchant of Record — handles global tax).

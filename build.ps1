@@ -35,6 +35,7 @@ $Files = @(
   "autofill.js",
   "autofill-ui.js",
   "autofill-page-button.js",
+  "merchant-table.js",
   "statement-parser.js",
   "subscriptions-ui.js",
   "privacy-guard-ui.js",

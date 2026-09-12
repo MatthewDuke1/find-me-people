@@ -1,3 +1,9 @@
 dist/
 distro/
 *.zip
+
+# Generator intermediate. merchant-table.js is the committed artifact; the
+# candidate is regenerated on every run and must never be what ships.
+scripts/merchant-table.candidate.json
+scripts/merchant-table.candidate.json.raw.txt
+.probe/
