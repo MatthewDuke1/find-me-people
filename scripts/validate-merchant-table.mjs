@@ -172,6 +172,17 @@ if (typeof parser.setMerchantTable !== "function") {
         " and " + JSON.stringify(pair[1]) + " -> " + JSON.stringify(n(pair[1])) + " but must match");
     }
   }
+  // A business that merely CONTAINS a brand name must not be claimed by the
+  // table. This is the check that would have caught the indexOf bug, and it is
+  // the one most likely to catch a future over-short pattern.
+  for (const desc of golden.mustNotResolve || []) {
+    const got = n(desc);
+    const expected = parser.normalizeMerchantFallback(desc);
+    if (got !== expected) {
+      fail("golden: " + JSON.stringify(desc) + " was claimed by the table as " +
+        JSON.stringify(got) + "; it must fall through to " + JSON.stringify(expected));
+    }
+  }
 }
 
 // ---- report -------------------------------------------------------------

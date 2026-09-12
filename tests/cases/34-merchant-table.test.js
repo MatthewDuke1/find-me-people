@@ -56,6 +56,39 @@ suite("the golden contract", () => {
       assertEq(n(pair[0]), n(pair[1]));
     });
   }
+
+  for (const desc of golden.mustNotResolve) {
+    test(JSON.stringify(desc) + " is not claimed by the table", () => {
+      assertEq(n(desc), parser.normalizeMerchantFallback(desc));
+    });
+  }
+});
+
+suite("patterns match whole tokens, not substrings", () => {
+  // The table matched with indexOf at first. A short pattern then matched
+  // inside any longer word containing it, producing a confident wrong name --
+  // worse than returning nothing. Matching is whole-token now; these pin it.
+  test("a brand inside a longer word is not a match", () => {
+    assertEq(n("NESTLE WATERS"), parser.normalizeMerchantFallback("NESTLE WATERS"));
+    assertEq(n("COMPLEX MEDIA"), parser.normalizeMerchantFallback("COMPLEX MEDIA"));
+  });
+
+  test("but the brand itself still matches", () => {
+    assertEq(n("PLEX*SUBSCRIPTION"), "Plex");
+  });
+
+  test("a longer pattern beats the shorter one it contains", () => {
+    // "PLEX" is a substring of "PERPLEXITY"; longest-first ordering decides.
+    assertEq(n("PERPLEXITY AI"), "Perplexity");
+    assertTrue(n("YOUTUBE TV") !== n("YOUTUBE PREMIUM"), "YouTube variants collapsed");
+  });
+
+  test("punctuation counts as a token boundary", () => {
+    // Patterns legitimately contain "." and "/" and "&", which is why the
+    // matcher uses alphanumeric lookarounds rather than \\b.
+    assertEq(n("NETFLIX.COM"), "Netflix");
+    assertEq(n("SPOTIFY*USA"), "Spotify");
+  });
 });
 
 suite("the three bugs the table exists to fix", () => {

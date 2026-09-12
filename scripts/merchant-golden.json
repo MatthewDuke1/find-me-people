@@ -49,5 +49,33 @@
   "mustMatch": [
     ["SPOTIFY P34F9G8 NEW YORK NY", "SPOTIFY P99X1Q2 NEW YORK NY"],
     ["PAYPAL *SPOTIFY", "SPOTIFY*USA"]
+  ],
+
+  "_mustNotResolve_comment": [
+    "Businesses that are NOT the brand hiding inside their name. These must fall",
+    "through to the regex pass untouched.",
+    "",
+    "The first implementation matched patterns with a plain indexOf, so a short",
+    "pattern matched inside an unrelated word: 'NEST' hit THE HONEST COMPANY and",
+    "NESTLE, 'PLEX' hit COMPLEX / PLEXUS / DUPLEX, 'PHILO' hit PHILOSOPHY.",
+    "Each produced a confident WRONG merchant name -- the failure mode the",
+    "statement-parser header calls worse than no answer at all. Matching is now",
+    "whole-token. These cases exist so it stays that way, and so a regeneration",
+    "cannot add a pattern short enough to bring the problem back."
+  ],
+  "mustNotResolve": [
+    "THE HONEST COMPANY",
+    "NESTLE WATERS",
+    "PHILOSOPHY SKINCARE",
+    "COMPLEX MEDIA",
+    "PLEXUS WORLDWIDE",
+    "DUPLEX PROPERTY MGMT",
+    "HOME DEPOT HINGES",
+    "HARDWIRED ELECTRIC CO",
+    "REGALO BABY GATES",
+    "TUBING RENTAL CO",
+    "MUBIQUITY LLC",
+    "STARZINGER BAKERY",
+    "GYPSY ROSE BOUTIQUE"
   ]
 }

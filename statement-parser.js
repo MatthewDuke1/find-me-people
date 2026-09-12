@@ -237,12 +237,31 @@
     return null;
   }
 
-  // Longest pattern first, so "SPOTIFY" is tried before a hypothetical "SPOT".
+  // Longest pattern first, so "PERPLEXITY" is tried before "PLEX" and
+  // "YOUTUBE TV" before "YOUTUBE".
+  //
+  // Each pattern is compiled to a WHOLE-TOKEN matcher rather than used as a
+  // raw substring. A plain indexOf was the first implementation and it was
+  // wrong in a way that matters: "NEST" matched inside "THE HONEST COMPANY"
+  // and "NESTLE WATERS", "PLEX" inside "COMPLEX MEDIA" / "PLEXUS" / "DUPLEX",
+  // "PHILO" inside "PHILOSOPHY SKINCARE", "WIRED" inside "HARDWIRED ELECTRIC".
+  // Every one of those produced a confident WRONG merchant name, which is the
+  // exact failure this file's header says is worse than no answer at all.
+  //
+  // The guards are alphanumeric lookarounds rather than \b, because patterns
+  // legitimately contain punctuation ("APPLE.COM/BILL", "AT&T") and \b around
+  // a punctuation edge does not mean what you would want it to.
+  function compilePattern(pattern) {
+    const escaped = String(pattern).replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&");
+    return new RegExp("(?<![A-Z0-9])" + escaped + "(?![A-Z0-9])");
+  }
+
   function sortedMerchants(table) {
     if (sortedCacheFor === table && sortedCache) return sortedCache;
     const list = (table && Array.isArray(table.merchants) ? table.merchants : [])
       .slice()
-      .sort((a, b) => String(b.pattern).length - String(a.pattern).length);
+      .sort((a, b) => String(b.pattern).length - String(a.pattern).length)
+      .map((m) => ({ pattern: m.pattern, name: m.name, re: compilePattern(m.pattern) }));
     sortedCache = list;
     sortedCacheFor = table;
     return list;
@@ -265,7 +284,7 @@
     if (table) {
       const stripped = stripAggregator(upper, table);
       for (const entry of sortedMerchants(table)) {
-        if (stripped.indexOf(entry.pattern) !== -1) return entry.name;
+        if (entry.re.test(stripped)) return entry.name;
       }
       // Recognised processor, unrecognised merchant: hand the remainder to the
       // regex pass rather than the original string, so the processor prefix is

@@ -22,6 +22,15 @@
 
   // version -> { headline, items[] }. Newest first. Keep copy plain and short.
   const NOTES = {
+    "2.6.6": {
+      headline: "Subscription detection stops losing merchants",
+      items: [
+        "Subscriptions billed through PayPal, Square or Toast are now recognised by the real merchant instead of the payment processor.",
+        "A subscription whose description changes slightly each month is no longer split up and missed.",
+        "Sula knows 335 common recurring billers by name, so your imported statement reads like a list of brands rather than bank codes.",
+        "The merchant list ships with the extension — no account, no network call, and your statement still never leaves your browser.",
+      ],
+    },
     "2.6.5": {
       headline: "Accuracy fixes from a 20-tester QA round",
       items: [
