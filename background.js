@@ -1,3 +1,59 @@
+
+// ── Renewal alerts ────────────────────────────────────────────────────────
+// A warning BEFORE the charge lands is the whole value of the ledger. After
+// the charge it is just a receipt, and the user is already arguing about a
+// refund instead of avoiding one.
+//
+// Deliberately does NOT request the notifications permission. A daily OS
+// notification from a browser extension is the fastest way to get uninstalled,
+// and a new permission on a privacy extension costs more trust than it buys.
+// The alert rides the badge the extension already owns; the panel carries the
+// detail when the user opens it.
+//
+// Reads only what is already on the device. No network call, ever.
+const LEDGER_ALARM = "sula-renewal-check";
+const RENEWAL_HORIZON_DAYS = 5;
+const KEY_PREFIX = "sula_ledger_";
+const OPT_IN_KEY = "sula_ledger_optin";
+
+chrome.runtime.onInstalled.addListener(() => {
+  // Once a day is right for this: renewal dates move in days, and a tighter
+  // period would wake the worker for nothing.
+  chrome.alarms.create(LEDGER_ALARM, { periodInMinutes: 60 * 24, delayInMinutes: 5 });
+});
+
+function renewalsDueSoon(entries, nowMs, days) {
+  const horizon = nowMs + days * 24 * 60 * 60 * 1000;
+  return entries.filter((e) => {
+    if (!e || e.kind !== "subscription") return false;
+    if (e.state === "closed") return false;
+    if (e.mine === false) return false;          // marked "not mine" — a gift
+    const next = e.renewal && e.renewal.nextDate;
+    if (typeof next !== "number") return false;
+    return next >= nowMs && next <= horizon;
+  });
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (!alarm || alarm.name !== LEDGER_ALARM) return;
+  chrome.storage.local.get(null, (all) => {
+    if (chrome.runtime.lastError) return;
+    if (!all || !all[OPT_IN_KEY]) return;        // ledger is off — do nothing
+    const entries = [];
+    for (const k of Object.keys(all)) {
+      if (k.indexOf(KEY_PREFIX) === 0 && k !== OPT_IN_KEY && all[k]) entries.push(all[k]);
+    }
+    const due = renewalsDueSoon(entries, Date.now(), RENEWAL_HORIZON_DAYS);
+    // Store the count for the panel to read, and mark the badge so the user
+    // has a reason to open Sula without being interrupted by an OS popup.
+    chrome.storage.local.set({ sula_renewals_due: due.length });
+    if (due.length > 0) {
+      chrome.action.setBadgeText({ text: String(due.length) }).catch(() => {});
+      chrome.action.setBadgeBackgroundColor({ color: "#fbbf24" }).catch(() => {});
+    }
+  });
+});
+
 // Sula - Background Service Worker
 // Manages badge count and tab-level state
 

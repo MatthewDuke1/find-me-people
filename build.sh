@@ -34,14 +34,14 @@ FILES=(
   autofill.js
   autofill-ui.js
   autofill-page-button.js
-  resume-injection.js
-  resume-ui.js
   statement-parser.js
   subscriptions-ui.js
   privacy-guard-ui.js
   refund-policy-extractor.js
   refund-moment-detector.js
   checkout-signals.js
+  ledger-extract.js
+  ledger-store.js
   checkout-guard.js
   icons
   PRIVACY_POLICY.md

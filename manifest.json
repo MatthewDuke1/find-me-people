@@ -7,7 +7,8 @@
     "activeTab",
     "scripting",
     "storage",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "alarms"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -57,6 +58,8 @@
       ],
       "js": [
         "license.js",
+        "ledger-extract.js",
+        "ledger-store.js",
         "content.js",
         "job-contacts.js",
         "refund-moment-detector.js",

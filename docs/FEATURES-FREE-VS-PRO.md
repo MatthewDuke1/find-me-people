@@ -1,6 +1,6 @@
 # Sula — free vs Pro
 
-Current as of **2.3.0**.
+Current as of **2.6.5**.
 
 The shape of the split: anything that helps you *find out where you stand* is
 free. Anything that *does the work for you* is Pro. A free user gets a real
@@ -13,7 +13,7 @@ answer on every feature, not a teaser.
 | Feature | What it does |
 |---|---|
 | **Contact finder** | Reads the page and surfaces real customer-service emails and phone numbers, ranked so the address most likely to reach a person is first. |
-| **Chatbot bypass** | Detects Intercom, Zendesk, Drift, Crisp, HubSpot, Tidio, LiveChat, Tawk, Freshchat, Olark — and reads the vendor's own help-center data to find the contact the bot deflects from. |
+| **Support-posture signal** | Detects Intercom, Zendesk, Drift, Crisp, HubSpot, Tidio, LiveChat, Tawk, Freshchat, Olark and tells you how the company actually routes support — so a site with no published email is read as "routes through chat" rather than a dead end. Presence only: the help-center fetch this used to do was measured across 48 sites, recovered 2 usable addresses out of 21 extracted, and was removed in 2.6.6. |
 | **Deeper scanning** | JSON-LD, schema.org, hydration state (`__NEXT_DATA__`), same-origin iframes, and a same-origin contact-page fallback. |
 | **Copy history** | The last 50 contacts you copied, searchable. |
 | **Business hours** | Live "Open now" / "Closed" from the page's structured data. |
@@ -24,11 +24,11 @@ answer on every feature, not a teaser.
 | **Refund-moment detector** | Recognises order, receipt, and subscription pages and offers help there. |
 | **Autofill** | Save your details once, fill any application or contact form in one click. Stored on your device, highlighted so you can check it, and never auto-submitted. |
 | **On-page autofill button** | On a form page with no contacts, a floating **Fill** button appears so you never have to open the toolbar. |
-| **Resume match score** | Paste your resume, scan a job posting, see what percentage of the posting's terms your resume already supports. |
-| **Resume coverage & gaps** | Every term the posting emphasises, split into what you already cover and what you don't. |
 | **Regulator directory** | Where to escalate — CFPB, FTC, DOT, FCC, BBB, state AG — with filing links. |
 | **Email quality checks** | Syntax, disposable domains, and role-account detection, all local. |
-| **Network transparency** | Shows exactly what (if anything) left your browser during a scan. |
+| **Network transparency** | Shows exactly what (if anything) left your browser during a scan. Three of the six request sites were removed in 2.6.6, so this now reads a truthful zero on far more pages. |
+| **Checkout Guard** | Reads the fine print a merchant buries on the checkout page — auto-renewal terms, restocking fees, final-sale flags — before you pay. |
+| **Privacy Guard / GPC** | Sends a Global Privacy Control signal, which several US states legally require sites to honour. |
 
 ## Pro — $6/month, $57.60/year, or $80 once
 
@@ -37,11 +37,10 @@ answer on every feature, not a teaser.
 | **Refund & complaint letters** | Seven scenarios (unauthorized charge, duplicate charge, defective, not as described, free-trial auto-renewal, cancelled-but-charged, price drop), each written with the right leverage — FCBA, the merchant's own policy, chargeback, FTC negative-option, CFPB. |
 | **Chargeback guidance** | Tells you whether a chargeback is the right move *yet* (often: write to the merchant first), then the exact dispute steps for Chase, Amex, Bank of America, Citi, Capital One, or Wells Fargo. |
 | **Subscription Guardian** | Tracks renewal dates, warns before a free trial converts, and drafts the cancellation. |
+| **Passive ledger** | Opt-in. Remembers what you bought from the order and billing pages you were already visiting, so refund deadlines date themselves and subscriptions appear without importing a bank statement. Stored only on your device; nothing is uploaded. |
+| **Renewal alerts** | A warning before a charge lands, not after — driven by the ledger, with the cancellation contact already found. |
+| **Statement import** | CSV / OFX / QFX from your own bank, parsed in the browser. Now the power-user path rather than the price of entry. |
 | **Regulatory escalation drafts** | Complaint letters aimed at the right agency. |
-| **Resume rewrite guidance** | For each gap, which of *your own* bullets could carry it, with a copy button. Sula never writes the claim — you decide what is true. |
-| **Contact export** | CSV and vCard. |
-| **Save to CRM** | One click to Zapier, Make, HubSpot, or any webhook. |
-| **Draft the first touch** | A personalised outreach email for a contact you found. |
 | **Mailbox verification** | Real deliverability checks beyond the free syntax/MX tier. |
 
 ---
@@ -51,8 +50,8 @@ answer on every feature, not a teaser.
 **Anyone who installed Sula before pricing shipped keeps Pro for good — every
 Pro feature, including ones added later, with no license and nothing to click.**
 
-That covers the Resume rewrite guidance in 2.3.0 and anything Pro that ships
-after it. Two ways to qualify, so nobody slips through:
+That covers the passive ledger and renewal alerts, and anything Pro that ships
+after them. Two ways to qualify, so nobody slips through:
 
 1. Running any build older than `PRICING_VERSION` (2.1.0), on install *or*
    update — the flag is written before pricing ever reaches them.
@@ -85,8 +84,8 @@ Two rules, applied consistently:
 **A free user always gets a real answer.** The refund deadline countdown is free
 because knowing your FCBA window has expired is the single most valuable thing
 Sula can tell you, and charging for it would be charging for the diagnosis. The
-resume match score and gap list are free for the same reason — you see your
-actual score and every gap. Pro is what you buy once you know you need it.
+refund-policy reader and the regulator directory are free for the same reason —
+you always learn where you stand. Pro is what you buy once you know you need it.
 
 **Autofill is entirely free.** It is the acquisition hook. Resume analysis is
 the thing worth paying for, so that is where the line falls between two features
@@ -98,3 +97,25 @@ Pro does not buy you a service that acts on your behalf. Sula drafts, finds,
 computes, and tracks — you always hit send. There is no percentage taken from
 any refund you recover, and Sula never represents you. A $6/month subscription
 either earns its keep or it doesn't; it is not a cut of your money.
+
+---
+
+## Removed features
+
+Kept here so they are not re-proposed, and because the store listing and this
+doc both advertised them.
+
+| Feature | Removed | Why |
+|---|---|---|
+| Resume match, coverage, rewrite | 2.6.6 | Job-seeker tooling in a Shopping-category consumer extension. Moved to ApplyPilot. -946 lines. |
+| Help-center fetch (Zendesk / Freshdesk / Crisp) | 2.6.6 | Measured across 48 sites: 2 usable addresses out of 21 extracted, 86% noise. The Zendesk subdomain it depended on was wrong 3 times out of 3. -410 lines, and half the network request sites went with it. |
+| Contact export (CSV / vCard) | pending | Bulk-exporting a page's contacts is lead-generation behaviour, not consumer advocacy. |
+| Save to CRM | pending | The literal B2B feature. Its copy is what the Chrome Web Store cited when the listing was rejected for keyword spam. |
+| Draft the first touch | pending | Outbound sales, by name. |
+
+## A line the product does not cross
+
+The ledger remembers, but it never transmits. Everything it captures stays in
+`chrome.storage.local` on the device that captured it. No sync, no backup, no
+analytics, no "improving the product" — the moment purchase data leaves the
+browser, every claim in this document collapses at once.
