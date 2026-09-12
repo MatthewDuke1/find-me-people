@@ -580,6 +580,10 @@
     <span class="label">Tell sites not to sell my data <small>sends the Global Privacy Control signal</small></span>
     <button class="switch" id="gpc-toggle" role="switch" aria-checked="true" aria-label="Toggle Global Privacy Control signal"></button>
   </div>
+  <div class="settings-row">
+    <span class="label">Remember my purchases <small>stays on this device &mdash; powers refund deadlines &amp; renewal alerts</small></span>
+    <button class="switch" id="ledger-toggle" role="switch" aria-checked="true" aria-label="Toggle remembering purchases"></button>
+  </div>
 
   <!-- Pro / LemonSqueezy upgrade + activate. Populated by popup.js only when
        licensing is enforced (license.js PRO_ENFORCED), so it's invisible
@@ -604,6 +608,8 @@
   <script src="autofill-ui.js"></script>
   <script src="merchant-table.js"></script>
   <script src="statement-parser.js"></script>
+  <script src="ledger-store.js"></script>
+  <script src="ledger-ui.js"></script>
   <script src="subscriptions-ui.js"></script>
   <script src="privacy-guard-ui.js"></script>
   <script src="onboarding.js"></script>

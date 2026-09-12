@@ -23,8 +23,11 @@
   // version -> { headline, items[] }. Newest first. Keep copy plain and short.
   const NOTES = {
     "2.6.6": {
-      headline: "Subscription detection stops losing merchants",
+      headline: "Sula now remembers what you buy",
       items: [
+        "Sula notes purchases from the order pages you already visit, so refund deadlines date themselves and you get warned before a subscription renews.",
+        "It is on by default and stays on your device. Turn it off with \"Remember my purchases\" at the bottom of this popup; the Subs tab shows everything it holds and deletes it in one click.",
+        "Card numbers are never recorded — if Sula sees anything card-shaped on a page it skips the capture entirely.",
         "Subscriptions billed through PayPal, Square or Toast are now recognised by the real merchant instead of the payment processor.",
         "A subscription whose description changes slightly each month is no longer split up and missed.",
         "Sula knows 335 common recurring billers by name, so your imported statement reads like a list of brands rather than bank codes.",

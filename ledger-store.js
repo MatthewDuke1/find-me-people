@@ -188,14 +188,23 @@
   // One key per entry: a single blob means every write rewrites the whole
   // ledger and one corrupt parse loses everything.
   const KEY_PREFIX = "sula_ledger_";
-  const OPT_IN_KEY = "sula_ledger_optin";
+  // Named for what it is. This was `sula_ledger_optin` while the ledger was
+  // off until asked for; it is now on by default and the flag records an opt
+  // OUT, so the old name would have been a lie. Nothing had ever written the
+  // old key -- there was no UI to set it -- so no migration is needed.
+  const ENABLED_KEY = "sula_ledger_enabled";
 
+  // Default ON, matching the side-panel and GPC toggles: absent means on,
+  // and only an explicit `false` turns it off. Read this convention from
+  // popup.js -- every master switch in Sula uses `!== false`.
   function isEnabled() {
     return new Promise((resolve) => {
       try {
-        chrome.storage.local.get([OPT_IN_KEY], (out) => {
+        chrome.storage.local.get([ENABLED_KEY], (out) => {
+          // On a storage error, fail CLOSED. Capturing because we could not
+          // read the user's preference is the one outcome with no defence.
           if (chrome.runtime.lastError) return resolve(false);
-          resolve(!!(out && out[OPT_IN_KEY]));
+          resolve(!out || out[ENABLED_KEY] !== false);
         });
       } catch (_) { resolve(false); }
     });
@@ -203,7 +212,7 @@
 
   function setEnabled(on) {
     return new Promise((resolve) => {
-      try { chrome.storage.local.set({ [OPT_IN_KEY]: !!on }, () => resolve(true)); }
+      try { chrome.storage.local.set({ [ENABLED_KEY]: !!on }, () => resolve(true)); }
       catch (_) { resolve(false); }
     });
   }
@@ -215,7 +224,7 @@
           if (chrome.runtime.lastError) return resolve([]);
           const out = [];
           for (const k of Object.keys(all || {})) {
-            if (k.indexOf(KEY_PREFIX) === 0 && k !== OPT_IN_KEY && all[k]) out.push(all[k]);
+            if (k.indexOf(KEY_PREFIX) === 0 && k !== ENABLED_KEY && all[k]) out.push(all[k]);
           }
           resolve(out);
         });
@@ -235,11 +244,14 @@
 
   // Erase everything the ledger holds. Deliberately one call with no
   // confirmation maze -- Sula cannot ship a cancellation dark pattern.
+  //
+  // The enabled flag is preserved: wiping your history is not the same as
+  // changing your mind about the feature.
   function wipe() {
     return new Promise((resolve) => {
       try {
         chrome.storage.local.get(null, (all) => {
-          const keys = Object.keys(all || {}).filter((k) => k.indexOf(KEY_PREFIX) === 0);
+          const keys = Object.keys(all || {}).filter((k) => k.indexOf(KEY_PREFIX) === 0 && k !== ENABLED_KEY);
           chrome.storage.local.remove(keys, () => resolve(keys.length));
         });
       } catch (_) { resolve(0); }
