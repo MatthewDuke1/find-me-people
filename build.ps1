@@ -43,6 +43,8 @@ $Files = @(
   "refund-policy-extractor.js",
   "refund-moment-detector.js",
   "checkout-signals.js",
+  "ledger-extract.js",
+  "ledger-store.js",
   "checkout-guard.js",
   "PRIVACY_POLICY.md",
   "README.md"

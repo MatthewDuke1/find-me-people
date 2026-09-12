@@ -42,6 +42,8 @@ FILES=(
   refund-policy-extractor.js
   refund-moment-detector.js
   checkout-signals.js
+  ledger-extract.js
+  ledger-store.js
   checkout-guard.js
   icons
   PRIVACY_POLICY.md

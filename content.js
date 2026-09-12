@@ -3731,6 +3731,7 @@
       }).catch(() => {});
 
       ensureSidePanel(results);
+      sulaCaptureToLedger();
     };
 
     // Flush a debounced rescan: rate-limited, and run during browser IDLE time
@@ -5459,6 +5460,66 @@
       return !!ok;
     } catch (_) {
       return false;
+    }
+  }
+
+
+  // ── Passive ledger capture ──────────────────────────────────────────────
+  // Sula is already on the page when a subscription is born and every time it
+  // bills, so the ledger is built from pages the user visits anyway rather
+  // than from a bank statement they have to export.
+  //
+  // Opt-in is checked inside SulaLedger.capture(), which returns null when the
+  // ledger is off -- so this function is a no-op for anyone who has not asked
+  // for it. Nothing here makes a network request.
+  async function sulaCaptureToLedger() {
+    try {
+      if (!window.SulaLedger || !window.SulaLedgerExtract) return;
+      if (!(await window.SulaLedger.isEnabled())) return;
+
+      // Never capture in a private window. Checked here rather than relying on
+      // the caller, because a miss is unrecoverable once written.
+      if (chrome?.extension?.inIncognitoContext) return;
+
+      const moment = window.SulaRefundMoment
+        ? window.SulaRefundMoment.detectMoment()
+        : { moment: "none" };
+      const checkout = window.SulaCheckoutSignals
+        ? window.SulaCheckoutSignals.classifyCheckout({
+            url: location.href,
+            title: document.title || "",
+            bodyText: (document.body && document.body.innerText) || "",
+          })
+        : { checkout: false };
+
+      let which = null;
+      if (checkout && checkout.checkout) which = "checkout";
+      else if (moment.moment === "order") which = "order";
+      else if (moment.moment === "subscription") which = "subscription";
+      if (!which) return;
+
+      const bodyText = (document.body && document.body.innerText) || "";
+      const siteNameEl = document.querySelector('meta[property="og:site_name"]');
+      const facts = window.SulaLedgerExtract.extractOrderFacts({
+        url: location.href,
+        title: document.title || "",
+        bodyText,
+        topDomain: location.hostname,
+        siteName: siteNameEl ? siteNameEl.getAttribute("content") || "" : "",
+      });
+
+      // Renewal terms come from the checkout scanner, which returns the matched
+      // phrase and not just a boolean -- that phrase is how a subscription gets
+      // captured at birth with the merchant's own wording.
+      let renewal = null;
+      if (window.SulaCheckoutSignals && window.SulaCheckoutSignals.scanAutoRenew) {
+        const ar = window.SulaCheckoutSignals.scanAutoRenew(bodyText);
+        if (ar && ar.autoRenew) renewal = { cadence: null, nextDate: null, phrase: ar.phrase };
+      }
+
+      await window.SulaLedger.capture(facts, { moment: which, renewal });
+    } catch (_) {
+      // A ledger failure must never break a scan.
     }
   }
 
