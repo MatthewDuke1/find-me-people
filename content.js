@@ -4558,6 +4558,12 @@
           <span class="title"><img class="logo" src="${SP_ICON}" alt="" /> Sula</span>
           <button class="icon-btn" data-sp-action="collapse" aria-label="Collapse">&minus;</button>
         </div>
+        ${spIsDemo ? `
+        <div class="demo-banner">
+          <div class="demo-title">&#128075; These are examples, not real contacts</div>
+          <div class="demo-body">This is what Sula shows when it finds a way to reach a company. Browse to a site with a contact page and these will be replaced by the real thing &mdash; automatically, no button to press.</div>
+          <button class="demo-dismiss" data-sp-action="demo-dismiss">Got it</button>
+        </div>` : ""}
         ${tabsHtml}
     `;
 
@@ -4700,6 +4706,15 @@
   }
 
   const SP_CSS = `
+    .demo-banner{margin:10px 12px 0;padding:11px 12px;border-radius:9px;
+      background:rgba(96,165,250,.09);border:1px solid rgba(96,165,250,.28)}
+    .demo-title{font-size:12.5px;font-weight:700;color:#fafafa;margin-bottom:4px}
+    .demo-body{font-size:11.5px;line-height:1.5;color:#a1a1aa}
+    .demo-dismiss{margin-top:9px;background:#60a5fa;border:0;border-radius:7px;
+      color:#0b1220;font-size:11.5px;font-weight:700;padding:6px 12px;cursor:pointer}
+    .demo-dismiss:hover{filter:brightness(1.08)}
+    .demo-dismiss:focus-visible{outline:2px solid #fafafa;outline-offset:2px}
+
     :host {
       all: initial;
       position: fixed;
@@ -5162,6 +5177,19 @@
       el.addEventListener("click", () => host.classList.remove("expanded"));
     });
 
+    // "Got it" retires the demo for good and clears the examples off the panel
+    // immediately, so the user is never left looking at fake contacts.
+    shadow.querySelectorAll('[data-sp-action="demo-dismiss"]').forEach((el) => {
+      el.addEventListener("click", () => {
+        spMarkFirstRunSeen();
+        spIsDemo = false;
+        // The demo only renders when the real page had nothing on it, so the
+        // honest post-dismiss state is the normal empty-page one: no panel.
+        // The next page with real contacts mounts it again on its own.
+        host.remove();
+      });
+    });
+
     shadow.querySelectorAll('[data-sp-action="dismiss-site"]').forEach((el) => {
       el.addEventListener("click", () => {
         spDismissForDomain();
@@ -5462,20 +5490,67 @@
     }
   }
 
+  // ── First run ───────────────────────────────────────────────────────────
+  // The panel normally rides on found contacts, which means a new user whose
+  // first page happens to be barren sees nothing at all -- and the popup
+  // onboarding only fires if they click the toolbar icon, which is the very
+  // thing it exists to teach. So the first page load after install force-mounts
+  // the panel, opened, populated with worked examples.
+  //
+  // Examples are labelled as examples in the panel itself and use a reserved
+  // example.com address plus a 555 number, both of which cannot reach anyone.
+  // Showing an empty shell teaches nothing; showing the shape teaches the tool.
+  const SP_FIRST_RUN_FLAG = "sula_seen_panel";
+
+  function spIsFirstRun() {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get([SP_FIRST_RUN_FLAG], (out) => {
+          if (chrome.runtime.lastError) return resolve(false);
+          resolve(!(out && out[SP_FIRST_RUN_FLAG]));
+        });
+      } catch (_) { resolve(false); }
+    });
+  }
+
+  function spMarkFirstRunSeen() {
+    try { chrome.storage.local.set({ [SP_FIRST_RUN_FLAG]: true }); } catch (_) {}
+  }
+
+  // Shaped exactly like real scan output so every renderer, score badge and
+  // provenance panel works on it unchanged -- no demo-only code paths.
+  function spDemoResults() {
+    return {
+      emails: [
+        { value: "support@example.com", score: 92, source: "mailto",
+          context: "Questions? Email our support team." },
+        { value: "billing@example.com", score: 74, source: "footer",
+          context: "Billing enquiries" },
+      ],
+      phones: [
+        { value: "(555) 012-3456", score: 88, source: "tel",
+          context: "Call us Mon-Fri" },
+      ],
+    };
+  }
+
+  let spIsDemo = false;
+
   async function ensureSidePanel(currentResults) {
     if (!document.body) return;
 
-    const total =
+    let total =
       (currentResults.emails || []).length +
       (currentResults.phones || []).length;
 
-    let [masterOn, dismissed, currentClient, history, storedTabTop, profile] = await Promise.all([
+    let [masterOn, dismissed, currentClient, history, storedTabTop, profile, firstRun] = await Promise.all([
       spGetMaster(),
       spIsDismissedForDomain(),
       spGetClient(),
       spGetHistoryFromStorage(),
       spGetTabTop(),
       spGetAutofillProfile(),
+      spIsFirstRun(),
     ]);
 
     if (!masterOn || dismissed) {
@@ -5490,7 +5565,12 @@
     // real fillable form (>= 2 profile-mapped fields), surface the panel for it.
     const profileSet = profile && Object.keys(profile).length > 0;
     let formOnly = false;
-    if (total === 0) {
+    // First run wins over the empty-page bail: a new user must meet the panel
+    // even on a page with nothing on it, or they never learn it exists.
+    if (firstRun && total === 0) {
+      currentResults = spDemoResults();
+      total = currentResults.emails.length + currentResults.phones.length;
+    } else if (total === 0) {
       if (profileSet && spCountFillableFields() >= 2) {
         formOnly = true;
       } else {
@@ -5499,6 +5579,7 @@
         return;
       }
     }
+    spIsDemo = firstRun && total > 0 && !formOnly;
     // On a form-only page the "On this page" view is empty, so open on Autofill.
     if (formOnly && spActiveView === "now") spActiveView = "autofill";
 
@@ -5539,6 +5620,9 @@
       container.innerHTML = spBuildBody(currentResults, currentClient, history, profile);
       while (container.firstChild) shadow.appendChild(container.firstChild);
       document.documentElement.appendChild(host);
+      // First run mounts opened. A collapsed tab on a page the user did not
+      // ask anything of is indistinguishable from nothing happening.
+      if (spIsDemo) host.classList.add("expanded");
       // Apply user-dragged position (if any) on first mount only -- after
       // this, host.style.top survives the inner re-renders so further
       // mutations don't snap the tab back to the CSS default.
