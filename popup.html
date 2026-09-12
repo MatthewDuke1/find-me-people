@@ -463,44 +463,6 @@
     .af-in.af-invalid{border-color:#c0392b}
     .af-in.af-invalid:focus{border-color:#e74c3c}
 
-    /* Resume tab */
-    .rs-hint{font-size:11px;line-height:1.5;color:#9aa4b2;margin-bottom:8px}
-    .rs-ta{width:100%;box-sizing:border-box;background:#18181b;border:1px solid #27272a;border-radius:8px;
-      color:#fafafa;font-size:12px;line-height:1.5;padding:8px 10px;outline:none;font-family:inherit;resize:vertical}
-    .rs-ta:focus{border-color:#60a5fa}
-    .rs-actions{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
-    .rs-saved{font-size:11px;color:#4ade80}
-    /* Empty-resume validation (QA SULA-005): must actually be noticeable —
-       bigger than the success text, red, and it does not auto-erase. */
-    .rs-saved.rs-error{font-size:12px;color:#f87171;font-weight:600}
-    .rs-ta.rs-invalid{border-color:#f87171}
-    .rs-out{margin-top:10px}
-    .rs-warn{font-size:11.5px;color:#fbbf24;background:rgba(251,191,36,.08);
-      border:1px solid rgba(251,191,36,.25);border-radius:8px;padding:8px 10px}
-    .rs-score{display:flex;align-items:baseline;gap:8px;background:#18181b;border:1px solid #27272a;
-      border-radius:10px;padding:10px 12px}
-    .rs-num{font-size:26px;font-weight:800;letter-spacing:-.02em}
-    .rs-good .rs-num{color:#4ade80} .rs-mid .rs-num{color:#fbbf24} .rs-low .rs-num{color:#f87171}
-    .rs-lbl{font-size:11px;color:#9aa4b2;line-height:1.4}
-    .rs-src{font-size:10.5px;color:#71717a;margin-top:6px}
-    .rs-chips{display:flex;flex-wrap:wrap;gap:5px}
-    .rs-chip{font-size:10.5px;padding:3px 8px;border-radius:999px;border:1px solid #27272a}
-    .rs-hit{color:#4ade80;border-color:rgba(74,222,128,.3);background:rgba(74,222,128,.08)}
-    .rs-miss{color:#fbbf24;border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.08)}
-    .rs-none{font-size:11px;color:#71717a}
-    .rs-sug{background:#18181b;border:1px solid #27272a;border-radius:8px;padding:9px 11px;margin-top:7px}
-    .rs-term{font-size:12px;font-weight:700;color:#fbbf24}
-    .rs-act{font-size:11px;color:#cdd6e2;margin-top:3px;line-height:1.45}
-    .rs-host{font-size:11px;color:#9aa4b2;background:#0c1322;border-left:2px solid #3f3f46;
-      border-radius:4px;padding:6px 8px;margin-top:6px;line-height:1.45}
-    .rs-copy{margin-top:6px;font:inherit;font-size:10.5px;font-weight:600;cursor:pointer;
-      background:transparent;color:#93c5fd;border:1px solid #2a3852;border-radius:6px;padding:4px 9px}
-    .rs-copy:hover{border-color:#60a5fa}
-    .rs-disclaim{font-size:10.5px;color:#71717a;line-height:1.5;margin-top:12px;
-      border-top:1px solid #27272a;padding-top:8px}
-    .rs-locked{background:rgba(96,165,250,.06);border:1px solid rgba(96,165,250,.22);
-      border-radius:9px;padding:11px 12px;margin-top:6px}
-    .rs-locked-lead{font-size:12px;color:#cdd6e2;line-height:1.45}
     /* Privacy Guard tab */
     .pg-wrap { padding: 12px 16px 16px; }
     .pg-gpc { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px;
@@ -599,7 +561,6 @@
     <button class="view-tab" data-view="history">History</button>
     <button class="view-tab" data-view="advocacy">Advocacy</button>
     <button class="view-tab" data-view="autofill">Autofill</button>
-    <button class="view-tab" data-view="resume">Resume</button>
     <button class="view-tab" data-view="subs">Subs</button>
     <button class="view-tab" data-view="privacy">Privacy</button>
   </div>
@@ -641,8 +602,6 @@
   <script src="chargeback-guide.js"></script>
   <script src="advocacy-ui.js"></script>
   <script src="autofill-ui.js"></script>
-  <script src="resume-injection.js"></script>
-  <script src="resume-ui.js"></script>
   <script src="statement-parser.js"></script>
   <script src="subscriptions-ui.js"></script>
   <script src="privacy-guard-ui.js"></script>
