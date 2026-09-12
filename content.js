@@ -584,40 +584,6 @@
     // queue them through the same discovered-page fetch path.
     fetchSitemapContactUrls(results, seen);
 
-    // 7. Fallback: if the in-DOM scan AND the discovered-page fetch came
-    // up totally empty, fire a fire-and-forget background fetch of a
-    // hardcoded list of common contact paths (/contact, /about, /support)
-    // and merge any matches. Bounded to once per origin per session.
-    if (results.emails.length + results.phones.length === 0) {
-      fetchAndScanFallbackPages(results, seen);
-    }
-
-    // 7. If the page is a Zendesk-powered help center (or carries the
-    // Zendesk Web Widget snippet with a discoverable subdomain), query
-    // the public Help Center search API for contact-related articles.
-    // The bot the user sees in the widget is just RAG over these
-    // articles -- we read them directly, no chat-UI dance required.
-    const zendeskSub = detectZendeskSubdomain();
-    if (zendeskSub) {
-      fetchZendeskHelpCenter(zendeskSub, results, seen);
-    }
-
-    // 7b. Same idea for Freshdesk-powered help centers / Freshchat widgets.
-    // Public solutions search returns article excerpts; we grep them for
-    // contact info the chatbot was deflecting from.
-    const freshdeskHost = detectFreshdeskHost();
-    if (freshdeskHost) {
-      fetchFreshdeskHelpCenter(freshdeskHost, results, seen);
-    }
-
-    // 7c. Crisp Helpdesk uses a public website-keyed help center at
-    // help.crisp.chat/<website-id-or-slug>. When we've identified the
-    // workspace in scanChatbotVendors, query the public article list.
-    const crispWorkspace = detectCrispWorkspace();
-    if (crispWorkspace) {
-      fetchCrispHelpdesk(crispWorkspace, results, seen);
-    }
-
     // Perf instrumentation. Always records the last scan duration + rolling
     // stats on window (read window.__sulaLastScanMs / __sulaScanStats anytime);
     // verbose per-scan console logging only when localStorage.fmp_perf === "1"
@@ -1232,7 +1198,7 @@
   //   1. Any email/phone directly exposed in the config (rare but very
   //      high-confidence -- chatbot config emails are almost always the
   //      real support address).
-  //   2. The vendor account identifier (app_id / subdomain / website_id /
+  //   2. The vendor account identifier (app_id / website_id /
   //      portal_id / license / token) which we use to reconstruct the
   //      vendor's standard help-center URL. That URL gets pushed into
   //      results.links so the side panel surfaces it under "Support pages"
@@ -1261,8 +1227,12 @@
         "(function(){try{var d={};" +
         // Intercom: intercomSettings.app_id, email_support_address.
         "try{var ic=window.intercomSettings;if(ic||window.Intercom){d.intercom={app_id:(ic&&ic.app_id)||null,email:(ic&&(ic.email_support_address||ic.support_email))||null};}}catch(e){}" +
-        // Zendesk: detected via globals; subdomain pulled from snippet src.
-        "try{if(window.zESettings||window.zE||window.zEACLoaded){var sub=null;var ss=document.querySelectorAll('script[src*=\"zdassets\"],script[src*=\"zendesk\"]');for(var i=0;i<ss.length;i++){var u=ss[i].src||'';var m=u.match(/static\\.zdassets\\.com\\/ekr\\/[^?]+\\?key=([a-z0-9-]+)/);if(m){sub=m[1];break;}var m2=u.match(/\\/\\/([a-z0-9-]+)\\.zendesk\\.com/);if(m2){sub=m2[1];break;}}d.zendesk={subdomain:sub};}}catch(e){}" +
+        // Presence only. The subdomain regex that used to live here fed the
+        // help-center fetch: across 48 sites it extracted 3 subdomains and 0
+        // were correct -- modern widgets carry a GUID in the ekr key, which
+        // the pattern matched happily and which resolves to a 404. Presence
+        // is still worth having as a support-posture signal.
+        "try{if(window.zESettings||window.zE||window.zEACLoaded){d.zendesk={present:true};}}catch(e){}" +
         // Drift: drift / driftt globals. embedId is the widget account.
         "try{var dr=window.drift||window.driftt;if(dr){var eid=null;try{eid=(dr.api&&dr.api.embedId)||(dr.api&&dr.api.params&&dr.api.params.embedId)||null;}catch(e){}d.drift={embed_id:eid};}}catch(e){}" +
         // Crisp: CRISP_WEBSITE_ID is the workspace UUID.
@@ -1302,7 +1272,9 @@
     // from the real support channel, no chat-UI dance required.
     const helpUrlForVendor = {
       intercom:  (info) => info.app_id ? `https://intercom.help/${info.app_id}/` : null,
-      zendesk:   (info) => info.subdomain ? `https://${info.subdomain}.zendesk.com/hc` : null,
+      // zendesk: no reliable identifier. The subdomain this used was wrong
+      // 3 times out of 3, so a link built from it sent the user to a 404.
+      zendesk:   ()     => null,
       drift:     (info) => info.embed_id ? `https://app.drift.com/${info.embed_id}` : null,
       crisp:     (info) => info.website_id ? `https://app.crisp.chat/website/${info.website_id}/` : null,
       hubspot:   (info) => info.portal_id ? `https://app.hubspot.com/contacts/${info.portal_id}/` : "https://help.hubspot.com/",
@@ -2649,388 +2621,6 @@
   function hasPhoneProximityAnchor(surrounding) {
     if (!surrounding) return false;
     return PHONE_PROXIMITY_ANCHORS.some((k) => surrounding.includes(k));
-  }
-
-  // opts.requireProximityAnchor: when true, drop phone matches whose +/-100
-  // character window contains no contact-context keyword. Used by the
-  // loose-body scan to keep Google search results / directory pages /
-  // social feeds from dumping every snippet phone into the results.
-  // The narrow CONTACT_SELECTORS scans don't set this flag because they
-  // already proved contact-context at the container level.
-
-  // Identify the Zendesk subdomain for the current page, or null if the
-  // page isn't a Zendesk help center / doesn't carry a Web Widget that
-  // tells us which Zendesk account it belongs to.
-  //
-  // Three signals checked in order:
-  //   1. Current host matches "{sub}.zendesk.com" -- the user is already
-  //      on a Zendesk help center (e.g. support.zendesk.com).
-  //   2. A <script> on the page points at static.zdassets.com with a
-  //      ?key= query param -- the Zendesk Web Widget snippet, used on
-  //      marketing pages that load the embedded chat. The key IS the
-  //      account subdomain.
-  //   3. A <script> on the page points at "{sub}.zendesk.com/..." --
-  //      Help Center alias pages and embedded resources.
-  //
-  // Returns the subdomain string or null. Cheap (just DOM queries +
-  // regex), so safe to call on every page.
-  function detectZendeskSubdomain() {
-    try {
-      const hostMatch = window.location.hostname.match(/^([a-z0-9-]+)\.zendesk\.com$/i);
-      if (hostMatch) return hostMatch[1].toLowerCase();
-    } catch (_) {}
-    const scripts = document.querySelectorAll('script[src*="zdassets"], script[src*="zendesk.com"]');
-    for (let i = 0; i < scripts.length; i++) {
-      const src = scripts[i].src || "";
-      const keyMatch = src.match(/static\.zdassets\.com\/ekr\/[^?]+\?key=([a-z0-9-]+)/i);
-      if (keyMatch) return keyMatch[1].toLowerCase();
-      const subMatch = src.match(/\/\/([a-z0-9-]+)\.zendesk\.com\//i);
-      if (subMatch) return subMatch[1].toLowerCase();
-    }
-    return null;
-  }
-
-  // Query the public Zendesk Help Center search API for contact-related
-  // articles, extract emails/phones from the article bodies, and merge
-  // them into results in place.
-  //
-  // The bot the user sees in the Zendesk Web Widget is a thin RAG layer
-  // over these very articles. Reading them directly returns the same
-  // contact info the bot would surface if the user managed to navigate
-  // its escalation flow -- without any chat-UI interaction.
-  //
-  // Behavior:
-  //   - Fire-and-forget: scanPage stays synchronous, the fetch resolves
-  //     out-of-band and mutates results. badge gets re-pushed via
-  //     updateBadge after merge.
-  //   - Once per subdomain per session (sessionStorage flag) -- a typical
-  //     site only needs one query, and rescans shouldn't repeat it.
-  //   - credentials: "omit" -- no cookies. From Zendesk's view we look
-  //     like any unauthenticated visitor hitting their public search.
-  //   - Bounded: per_page=10, body capped at 1 MB before parse, results
-  //     loop bails after 25 articles.
-  //   - Articles get a score floor of 95 -- they come from the company's
-  //     own knowledge base, which is the highest-confidence source we
-  //     have short of a mailto: link.
-  async function fetchZendeskHelpCenter(subdomain, results, seen) {
-    if (!subdomain || typeof subdomain !== "string") return;
-
-    // Once-per-session-per-subdomain gate
-    try {
-      const CACHE_KEY = "__fmp_zendesk_searched_" + subdomain;
-      if (sessionStorage.getItem(CACHE_KEY)) return;
-      sessionStorage.setItem(CACHE_KEY, "1");
-    } catch (_) {
-      return;
-    }
-
-    const url = "https://" + subdomain + ".zendesk.com/api/v2/help_center/articles/search.json?per_page=10&query=contact";
-    let json;
-    try {
-      sulaLogNet(url);
-        const resp = await fetch(url, {
-        credentials: "omit",
-        redirect: "follow",
-        cache: "no-cache",
-      });
-      if (!resp.ok) return;
-      const text = await resp.text();
-      if (!text || text.length > 1024 * 1024) return;
-      try { json = JSON.parse(text); } catch (_) { return; }
-    } catch (_) {
-      return;
-    }
-
-    if (!json || !Array.isArray(json.results)) return;
-
-    let added = 0;
-    const articles = json.results.slice(0, 25);
-    for (const article of articles) {
-      if (!article || typeof article.body !== "string") continue;
-
-      // The body is HTML. Strip tags before running our text regexes so
-      // attribute values (href="mailto:..." etc.) and tag boundaries
-      // don't pollute the match. innerText-style extraction via a
-      // throwaway DOMParser doc would be more thorough; a tag-strip
-      // suffices here because Zendesk article bodies are simple.
-      const stripped = article.body
-        .replace(/<style[\s\S]*?<\/style>/gi, " ")
-        .replace(/<script[\s\S]*?<\/script>/gi, " ")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/&nbsp;/gi, " ")
-        .replace(/&amp;/gi, "&")
-        .replace(/&lt;/gi, "<")
-        .replace(/&gt;/gi, ">")
-        .replace(/\s+/g, " ");
-
-      const articleUrl = article.html_url || article.url || "";
-      const articleTitle = (article.title || "").substring(0, 80);
-      const context = "Zendesk KB: " + articleTitle;
-
-      // Emails
-      const emailMatches = stripped.match(EMAIL_REGEX) || [];
-      emailMatches.forEach((email) => {
-        email = trimDigitPrefixBleed(email.toLowerCase());
-        if (seen.has(email)) return;
-        if (
-          email.endsWith(".png") || email.endsWith(".jpg") || email.endsWith(".svg") ||
-          email.includes("sentry") || email.includes("webpack") ||
-          isPlaceholderEmail(email) ||
-          email.includes("no-reply")
-        ) return;
-        seen.add(email);
-        results.emails.push({
-          value: email,
-          context,
-          // 95 floor: the company curated this content as their public
-          // support documentation; trust accordingly.
-          score: Math.max(95, scoreEmail(email, context)),
-          source: "zendesk-kb:" + subdomain,
-        });
-        added++;
-      });
-
-      // Phones
-      const phoneMatches = [
-        ...(stripped.match(PHONE_REGEX) || []),
-        ...(stripped.match(INTL_PHONE_REGEX) || []),
-      ];
-      phoneMatches.forEach((phone) => {
-        const cleaned = phone.replace(/[^\d+]/g, "");
-        if (cleaned.length < 10 || cleaned.length > 15) return;
-        const key = phoneKey(cleaned);
-        if (seen.has(key)) return;
-        // Same digit-run heuristic the globals scan uses -- the article
-        // body may quote Zendesk article IDs (long bare digit runs).
-        // Require a separator or leading +.
-        if (!/[+\-.\s()]/.test(phone)) return;
-        seen.add(key);
-        results.phones.push({
-          value: formatPhone(phone),
-          context,
-          score: 95,
-          source: "zendesk-kb:" + subdomain,
-        });
-        added++;
-      });
-
-      // Push the article itself as a support link so the user can read it.
-      if (articleUrl && !seen.has(articleUrl)) {
-        seen.add(articleUrl);
-        results.links.push({
-          url: articleUrl,
-          text: articleTitle || "Zendesk help article",
-          source: "zendesk-kb:" + subdomain,
-        });
-      }
-    }
-
-    if (added > 0) {
-      // Re-sort after merging fresh results.
-      results.emails.sort((a, b) => b.score - a.score);
-      results.phones.sort((a, b) => b.score - a.score);
-      // Push an updated badge so the toolbar reflects the new finds.
-      const total = results.emails.length + results.phones.length;
-      try {
-        chrome.runtime.sendMessage({ action: "updateBadge", count: total }).catch(() => {});
-      } catch (_) {}
-    }
-  }
-
-  // ====================================================================
-  // FRESHDESK + CRISP HELPDESK KB SEARCH
-  //
-  // Same idea as fetchZendeskHelpCenter (PR #31): when a chatbot vendor's
-  // public knowledge base is reachable via a known URL pattern, fetch
-  // the contact / support articles directly and grep them for emails and
-  // phones. The bot the user sees in the widget is a thin RAG layer over
-  // these very articles -- reading them returns the same contact info
-  // without any chat-UI interaction.
-  //
-  // Per-vendor detail differs because each vendor's help-center URLs
-  // and response shapes are different. Common contract for all three
-  // helpers:
-  //
-  //   - Once-per-key-per-session sessionStorage gate
-  //   - credentials: 'same-origin' (matches the rest of our background
-  //     fetches; sends user cookies for the SAME origin only, no
-  //     cross-site tracking)
-  //   - Response body cap 1 MB before parse
-  //   - Fire-and-forget; results merged in place; badge re-pushed
-  //   - Found contacts use canonical phoneKey / trimDigitPrefixBleed
-  //     dedup helpers so duplicates against the in-page scan collapse
-  //   - Score floor 95 -- KB articles are the company's own curated
-  //     support documentation
-  // ====================================================================
-
-  // Identify a Freshdesk help-center host. Three signals:
-  //   1. Current host matches "{slug}.freshdesk.com" (the user is on
-  //      a Freshdesk help center directly)
-  //   2. A <script src=... freshdesk.com/...> on the page exposes the
-  //      slug (Freshchat widget loads its scripts from there)
-  //   3. The detected chatbot in scanChatbotVendors flagged Freshchat
-  //      (window.fcSettings.host carries the subdomain)
-  function detectFreshdeskHost() {
-    try {
-      const hostMatch = window.location.hostname.match(/^([a-z0-9-]+)\.freshdesk\.com$/i);
-      if (hostMatch) return hostMatch[1].toLowerCase();
-    } catch (_) {}
-    const scripts = document.querySelectorAll('script[src*="freshdesk"], script[src*="freshchat"]');
-    for (let i = 0; i < scripts.length; i++) {
-      const src = scripts[i].src || "";
-      const m = src.match(/\/\/([a-z0-9-]+)\.freshdesk\.com\//i);
-      if (m) return m[1].toLowerCase();
-    }
-    return null;
-  }
-
-  // Identify a Crisp workspace ID. Crisp's chatbot scanner already
-  // surfaces window.CRISP_WEBSITE_ID; this just reads it directly so
-  // the fetch path can run without depending on chatbot scan side-
-  // effects.
-  function detectCrispWorkspace() {
-    // The chatbot scanner stashes the website_id in results.links via
-    // the help-center URL; here we re-read the global directly through
-    // the same page-world bridge pattern, but inline + lightweight.
-    try {
-      const hostMatch = window.location.hostname.match(/^help\.crisp\.chat$/i);
-      if (hostMatch) {
-        // We're ON help.crisp.chat -- the slug is in the path
-        const slugMatch = (window.location.pathname || "").match(/^\/([a-z0-9-]+)(?:\/|$)/i);
-        if (slugMatch) return slugMatch[1].toLowerCase();
-      }
-    } catch (_) {}
-    // Look for the Crisp Chat snippet's website_id in script tags
-    const scripts = document.querySelectorAll('script');
-    for (let i = 0; i < scripts.length; i++) {
-      const txt = scripts[i].textContent || "";
-      const m = txt.match(/CRISP_WEBSITE_ID\s*=\s*["']([a-z0-9-]+)["']/i);
-      if (m) return m[1].toLowerCase();
-    }
-    return null;
-  }
-
-  // Fetch the Freshdesk solutions / articles search results and merge
-  // any contacts found. Tries the v2 search endpoint first (returns
-  // JSON); falls back to the public /support/search/solutions HTML page.
-  async function fetchFreshdeskHelpCenter(slug, results, seen) {
-    if (!slug || typeof slug !== "string") return;
-    try {
-      const CACHE_KEY = "__fmp_freshdesk_searched_" + slug;
-      if (sessionStorage.getItem(CACHE_KEY)) return;
-      sessionStorage.setItem(CACHE_KEY, "1");
-    } catch (_) {
-      return;
-    }
-
-    const candidates = [
-      "https://" + slug + ".freshdesk.com/api/v2/search/solutions?term=contact",
-      "https://" + slug + ".freshdesk.com/support/search/solutions?term=contact",
-    ];
-
-    let text = null;
-    for (const url of candidates) {
-      try {
-        sulaLogNet(url);
-        const resp = await fetch(url, {
-          credentials: "same-origin",
-          redirect: "follow",
-          cache: "no-cache",
-        });
-        if (!resp.ok) continue;
-        const body = await resp.text();
-        if (!body || body.length > 1024 * 1024) continue;
-        text = body;
-        break;
-      } catch (_) { /* try next */ }
-    }
-    if (!text) return;
-
-    // JSON shape (v2/search/solutions): array of objects with title +
-    // description. HTML shape: standard Freshdesk solutions page with
-    // article excerpts in <div class="article-body"> tags.
-    let stripped = text;
-    if (text.trim().startsWith("[") || text.trim().startsWith("{")) {
-      try {
-        const json = JSON.parse(text);
-        const items = Array.isArray(json) ? json : (json.results || []);
-        stripped = items
-          .map((a) => (a.title || "") + " " + (a.description || a.description_text || ""))
-          .join(" ");
-      } catch (_) { /* fall through to HTML strip */ }
-    }
-    if (stripped === text) {
-      // HTML body: strip tags + entities
-      stripped = text
-        .replace(/<style[\s\S]*?<\/style>/gi, " ")
-        .replace(/<script[\s\S]*?<\/script>/gi, " ")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/&nbsp;/gi, " ")
-        .replace(/&amp;/gi, "&")
-        .replace(/&lt;/gi, "<")
-        .replace(/&gt;/gi, ">")
-        .replace(/\s+/g, " ");
-    }
-
-    const context = "Freshdesk KB";
-    const ctxSource = "freshdesk-kb:" + slug;
-    mergeKBContactsFromText(stripped, context, ctxSource, results, seen);
-  }
-
-  // Fetch Crisp's public help center articles list (the index page is
-  // server-rendered HTML; we strip tags and scan).
-  async function fetchCrispHelpdesk(workspace, results, seen) {
-    if (!workspace || typeof workspace !== "string") return;
-    try {
-      const CACHE_KEY = "__fmp_crisp_searched_" + workspace;
-      if (sessionStorage.getItem(CACHE_KEY)) return;
-      sessionStorage.setItem(CACHE_KEY, "1");
-    } catch (_) {
-      return;
-    }
-
-    // help.crisp.chat is a CDN-cached static help-center host. The
-    // index page lists categorized articles; specific contact-related
-    // articles live at /<workspace>/en/category/contact.
-    const candidates = [
-      "https://help.crisp.chat/" + workspace + "/en/",
-      "https://help.crisp.chat/" + workspace + "/",
-    ];
-
-    let text = null;
-    for (const url of candidates) {
-      try {
-        sulaLogNet(url);
-        const resp = await fetch(url, {
-          credentials: "same-origin",
-          redirect: "follow",
-          cache: "no-cache",
-        });
-        if (!resp.ok) continue;
-        try {
-          if (new URL(resp.url).origin !== "https://help.crisp.chat") continue;
-        } catch (_) { continue; }
-        const body = await resp.text();
-        if (!body || body.length > 1024 * 1024) continue;
-        text = body;
-        break;
-      } catch (_) { /* try next */ }
-    }
-    if (!text) return;
-
-    const stripped = text
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/&nbsp;/gi, " ")
-      .replace(/&amp;/gi, "&")
-      .replace(/&lt;/gi, "<")
-      .replace(/&gt;/gi, ">")
-      .replace(/\s+/g, " ");
-
-    const context = "Crisp Helpdesk";
-    const ctxSource = "crisp-kb:" + workspace;
-    mergeKBContactsFromText(stripped, context, ctxSource, results, seen);
   }
 
   // Shared extraction helper for KB-style stripped text. Same scoring
@@ -4559,6 +4149,12 @@
           <span class="title"><img class="logo" src="${SP_ICON}" alt="" /> Sula</span>
           <button class="icon-btn" data-sp-action="collapse" aria-label="Collapse">&minus;</button>
         </div>
+        ${spIsDemo ? `
+        <div class="demo-banner">
+          <div class="demo-title">&#128075; These are examples, not real contacts</div>
+          <div class="demo-body">This is what Sula shows when it finds a way to reach a company. Browse to a site with a contact page and these will be replaced by the real thing &mdash; automatically, no button to press.</div>
+          <button class="demo-dismiss" data-sp-action="demo-dismiss">Got it</button>
+        </div>` : ""}
         ${tabsHtml}
     `;
 
@@ -4701,6 +4297,15 @@
   }
 
   const SP_CSS = `
+    .demo-banner{margin:10px 12px 0;padding:11px 12px;border-radius:9px;
+      background:rgba(96,165,250,.09);border:1px solid rgba(96,165,250,.28)}
+    .demo-title{font-size:12.5px;font-weight:700;color:#fafafa;margin-bottom:4px}
+    .demo-body{font-size:11.5px;line-height:1.5;color:#a1a1aa}
+    .demo-dismiss{margin-top:9px;background:#60a5fa;border:0;border-radius:7px;
+      color:#0b1220;font-size:11.5px;font-weight:700;padding:6px 12px;cursor:pointer}
+    .demo-dismiss:hover{filter:brightness(1.08)}
+    .demo-dismiss:focus-visible{outline:2px solid #fafafa;outline-offset:2px}
+
     :host {
       all: initial;
       position: fixed;
@@ -5163,6 +4768,19 @@
       el.addEventListener("click", () => host.classList.remove("expanded"));
     });
 
+    // "Got it" retires the demo for good and clears the examples off the panel
+    // immediately, so the user is never left looking at fake contacts.
+    shadow.querySelectorAll('[data-sp-action="demo-dismiss"]').forEach((el) => {
+      el.addEventListener("click", () => {
+        spMarkFirstRunSeen();
+        spIsDemo = false;
+        // The demo only renders when the real page had nothing on it, so the
+        // honest post-dismiss state is the normal empty-page one: no panel.
+        // The next page with real contacts mounts it again on its own.
+        host.remove();
+      });
+    });
+
     shadow.querySelectorAll('[data-sp-action="dismiss-site"]').forEach((el) => {
       el.addEventListener("click", () => {
         spDismissForDomain();
@@ -5523,20 +5141,67 @@
     }
   }
 
+  // ── First run ───────────────────────────────────────────────────────────
+  // The panel normally rides on found contacts, which means a new user whose
+  // first page happens to be barren sees nothing at all -- and the popup
+  // onboarding only fires if they click the toolbar icon, which is the very
+  // thing it exists to teach. So the first page load after install force-mounts
+  // the panel, opened, populated with worked examples.
+  //
+  // Examples are labelled as examples in the panel itself and use a reserved
+  // example.com address plus a 555 number, both of which cannot reach anyone.
+  // Showing an empty shell teaches nothing; showing the shape teaches the tool.
+  const SP_FIRST_RUN_FLAG = "sula_seen_panel";
+
+  function spIsFirstRun() {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get([SP_FIRST_RUN_FLAG], (out) => {
+          if (chrome.runtime.lastError) return resolve(false);
+          resolve(!(out && out[SP_FIRST_RUN_FLAG]));
+        });
+      } catch (_) { resolve(false); }
+    });
+  }
+
+  function spMarkFirstRunSeen() {
+    try { chrome.storage.local.set({ [SP_FIRST_RUN_FLAG]: true }); } catch (_) {}
+  }
+
+  // Shaped exactly like real scan output so every renderer, score badge and
+  // provenance panel works on it unchanged -- no demo-only code paths.
+  function spDemoResults() {
+    return {
+      emails: [
+        { value: "support@example.com", score: 92, source: "mailto",
+          context: "Questions? Email our support team." },
+        { value: "billing@example.com", score: 74, source: "footer",
+          context: "Billing enquiries" },
+      ],
+      phones: [
+        { value: "(555) 012-3456", score: 88, source: "tel",
+          context: "Call us Mon-Fri" },
+      ],
+    };
+  }
+
+  let spIsDemo = false;
+
   async function ensureSidePanel(currentResults) {
     if (!document.body) return;
 
-    const total =
+    let total =
       (currentResults.emails || []).length +
       (currentResults.phones || []).length;
 
-    let [masterOn, dismissed, currentClient, history, storedTabTop, profile] = await Promise.all([
+    let [masterOn, dismissed, currentClient, history, storedTabTop, profile, firstRun] = await Promise.all([
       spGetMaster(),
       spIsDismissedForDomain(),
       spGetClient(),
       spGetHistoryFromStorage(),
       spGetTabTop(),
       spGetAutofillProfile(),
+      spIsFirstRun(),
     ]);
 
     if (!masterOn || dismissed) {
@@ -5551,7 +5216,12 @@
     // real fillable form (>= 2 profile-mapped fields), surface the panel for it.
     const profileSet = profile && Object.keys(profile).length > 0;
     let formOnly = false;
-    if (total === 0) {
+    // First run wins over the empty-page bail: a new user must meet the panel
+    // even on a page with nothing on it, or they never learn it exists.
+    if (firstRun && total === 0) {
+      currentResults = spDemoResults();
+      total = currentResults.emails.length + currentResults.phones.length;
+    } else if (total === 0) {
       if (profileSet && spCountFillableFields() >= 2) {
         formOnly = true;
       } else {
@@ -5560,6 +5230,7 @@
         return;
       }
     }
+    spIsDemo = firstRun && total > 0 && !formOnly;
     // On a form-only page the "On this page" view is empty, so open on Autofill.
     if (formOnly && spActiveView === "now") spActiveView = "autofill";
 
@@ -5600,6 +5271,9 @@
       container.innerHTML = spBuildBody(currentResults, currentClient, history, profile);
       while (container.firstChild) shadow.appendChild(container.firstChild);
       document.documentElement.appendChild(host);
+      // First run mounts opened. A collapsed tab on a page the user did not
+      // ask anything of is indistinguishable from nothing happening.
+      if (spIsDemo) host.classList.add("expanded");
       // Apply user-dragged position (if any) on first mount only -- after
       // this, host.style.top survives the inner re-renders so further
       // mutations don't snap the tab back to the CSS default.
