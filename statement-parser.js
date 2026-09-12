@@ -193,8 +193,91 @@
   }
 
   // ---- Merchant normalization: collapse the noise banks add ----
-  // "SPOTIFY P34F9G8 NEW YORK NY" / "SPOTIFY*USA" -> "SPOTIFY"
+  //
+  // Two passes. The table pass (merchant-table.js, generated at build time)
+  // runs first and handles the cases regexes got wrong; whatever it does not
+  // recognise falls through to the original regex pass below, unchanged.
+  //
+  // The regex pass alone had three failure modes, all of them observed:
+  //
+  //   OVER-COLLAPSE   "PAYPAL *SPOTIFY" -> "PAYPAL". Splitting on "*" makes the
+  //                   processor the merchant, so every PayPal-routed
+  //                   subscription merged into one entry with a nonsense median
+  //                   amount.
+  //   UNDER-COLLAPSE  "SPOTIFY P34F9G8 NEW YORK NY" -> "SPOTIFY P34F9G8". The
+  //                   transaction-id regex required a leading digit, so ids
+  //                   starting with a letter survived and one subscription
+  //                   became N singletons -- each then dropped by the
+  //                   `list.length < 2` guard in detectRecurring. A silent miss.
+  //   RAW FALLTHROUGH "SQ *BLUE BOTTLE" -> unchanged. "SQ" was eaten as a
+  //                   trailing state code, the string went empty, and the ||
+  //                   fallback returned the raw descriptor including its
+  //                   transaction-specific noise.
+  //
+  // The table is static data. No network call, no model call, no API key, and
+  // nothing about the statement leaves the browser -- see the file header.
+
+  // Injectable so tests and scripts/validate-merchant-table.mjs can exercise a
+  // candidate table through this real code path. Falls back to the global the
+  // generated merchant-table.js installs, and to null when it is absent -- in
+  // which case normalizeMerchant degrades to exactly its old behaviour.
+  let TABLE_OVERRIDE = null;
+  let sortedCache = null;
+  let sortedCacheFor = null;
+
+  function setMerchantTable(t) {
+    TABLE_OVERRIDE = t || null;
+    sortedCache = null;
+    sortedCacheFor = null;
+  }
+
+  function merchantTable() {
+    if (TABLE_OVERRIDE) return TABLE_OVERRIDE;
+    if (typeof window !== "undefined" && window.SulaMerchantTable) return window.SulaMerchantTable;
+    return null;
+  }
+
+  // Longest pattern first, so "SPOTIFY" is tried before a hypothetical "SPOT".
+  function sortedMerchants(table) {
+    if (sortedCacheFor === table && sortedCache) return sortedCache;
+    const list = (table && Array.isArray(table.merchants) ? table.merchants : [])
+      .slice()
+      .sort((a, b) => String(b.pattern).length - String(a.pattern).length);
+    sortedCache = list;
+    sortedCacheFor = table;
+    return list;
+  }
+
+  // "PAYPAL *SPOTIFY" -> "SPOTIFY", but only when the prefix is a KNOWN
+  // processor. Stripping an unrecognised prefix would delete a real merchant
+  // name ("ADOBE  *CREATIVE CLOUD" must stay Adobe).
+  function stripAggregator(upper, table) {
+    const aggs = table && Array.isArray(table.aggregators) ? table.aggregators : [];
+    if (!aggs.length) return upper;
+    const m = /^([A-Z0-9]{1,10})\s*[*#]\s*(.+)$/.exec(upper);
+    if (!m) return upper;
+    return aggs.indexOf(m[1]) === -1 ? upper : m[2].trim();
+  }
+
   function normalizeMerchant(desc) {
+    const table = merchantTable();
+    const upper = String(desc).toUpperCase();
+    if (table) {
+      const stripped = stripAggregator(upper, table);
+      for (const entry of sortedMerchants(table)) {
+        if (stripped.indexOf(entry.pattern) !== -1) return entry.name;
+      }
+      // Recognised processor, unrecognised merchant: hand the remainder to the
+      // regex pass rather than the original string, so the processor prefix is
+      // still gone.
+      if (stripped !== upper) return normalizeMerchantFallback(stripped);
+    }
+    return normalizeMerchantFallback(desc);
+  }
+
+  // The original heuristic pass, unchanged. Still the only thing standing
+  // between an unlisted merchant and a useless grouping key.
+  function normalizeMerchantFallback(desc) {
     let s = String(desc).toUpperCase();
     s = s.replace(/\b(RECURRING|PAYMENT|PURCHASE|POS|DEBIT|ACH|AUTOPAY|WEB)\b/g, " ");
     s = s.split(/[*#]/)[0];                 // "SPOTIFY*USA" -> "SPOTIFY"
@@ -275,6 +358,7 @@
 
   window.SulaStatementParser = {
     parse, parseCsv, parseOfx, detectRecurring, normalizeMerchant,
+    normalizeMerchantFallback, setMerchantTable,
     _internals: { classifyCadence, median, toNumber, toDateMs },
   };
 })();
