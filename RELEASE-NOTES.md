@@ -9,27 +9,59 @@ once signed. Same unified package as Chrome — one zip, both stores.
 
 ---
 
-## v2.6.6 — Subscription detection stops losing merchants
+## v2.6.7 — Sula remembers what you buy
 
-Statement import grouped charges by a pile of hand-written regexes, which failed
-three different ways on real bank descriptors:
+**The passive ledger.** Sula is already on the page when you buy something, so it
+now keeps a record as it happens instead of asking you to export a bank
+statement. When you land on an order confirmation or billing page it notes the
+merchant, the amount, the order number and the date, plus renewal terms when the
+page states them.
 
-- **`PAYPAL *SPOTIFY` became `PAYPAL`.** Every PayPal-routed subscription merged
-  into one entry with a meaningless median amount.
-- **`SPOTIFY P34F9G8 NEW YORK NY` kept the transaction id**, so one subscription
-  split into a separate merchant per month and was then discarded for having
-  only a single charge. A silent miss — the subscription simply never appeared.
-- **`SQ *BLUE BOTTLE` came back unchanged**, because `SQ` was stripped as a state
-  code and the empty result fell back to the raw descriptor.
+- **Refund deadlines date themselves.** A purchase Sula saw already has its date,
+  so the deadline engine no longer needs you to type one in.
+- **Renewal alerts before the charge.** Once a day Sula checks for subscriptions
+  renewing in the next 5 days and puts the count on its toolbar icon. No OS
+  notification and no `notifications` permission; the detail is in the popup.
+- **Checkouts vs. purchases.** A checkout Sula sees is held as unconfirmed and is
+  promoted only when the confirmation page arrives. An abandoned cart is dropped
+  after 72 hours instead of becoming a fake purchase with a refund deadline.
+- **One purchase, one entry.** Checkout, confirmation and a revisit days later are
+  merged by order number, or by merchant and amount within 48 hours.
+- **On by default, and easy to turn off.** A *Remember my purchases* switch sits
+  beside the side-panel and Global Privacy Control switches.
+- **Everything it holds is visible.** The top of the Subs tab lists what the
+  ledger remembers, with a one-click delete-all. This view is not behind Pro:
+  anyone Sula records for can see and erase it.
+- **What it refuses to record.** If anything card-shaped appears on the page, the
+  capture is abandoned entirely rather than scrubbed. Nothing is captured in a
+  private window. Payment processors (Stripe, PayPal, Adyen) are never recorded
+  as the merchant.
+- **Where it goes: nowhere.** Stored in `chrome.storage.local` only. Never
+  uploaded, synced or used for analytics. Purchases age out after about 18
+  months; active subscriptions stay; at most 500 entries.
 
-Sula now ships a merchant table — payment-processor prefixes plus canonical names
-for 335 recurring billers — and consults it before the regex pass, which is
-unchanged and still handles everything the table does not recognise.
+**Statement import recognises merchants properly.** Grouping used to rely on
+hand-written patterns that failed on real bank descriptors:
 
-**The table is static data, generated on a maintainer's machine and shipped in
-the package.** The extension makes no model call and no network call, needs no
-API key, and works offline. A statement is still parsed entirely in your browser
-and still never leaves it.
+- `PAYPAL *SPOTIFY` became `PAYPAL`, so every PayPal-routed subscription merged
+  into one meaningless entry.
+- `SPOTIFY P34F9G8 NEW YORK NY` kept the transaction id, so one subscription split
+  into a separate merchant each month and was discarded. It never appeared.
+- `SQ *BLUE BOTTLE` came back unchanged.
+
+Sula now ships a table of 12 payment-processor prefixes and 335 recurring billers,
+consulted before the old patterns. It matches whole words, so "The Honest
+Company" is not mistaken for Google Nest. The table is static data built before
+release: no model call, no network call, no API key at runtime.
+
+**Also**
+
+- The privacy policy now has a full section on the purchase ledger.
+- The "Find Me People is now Sula" banner is retired. It never expired, so some
+  1.x upgraders were still seeing it a dozen releases later.
+- The What's new card can now feature a headline change and open the relevant tab.
+
+_Includes everything from 2.6.6._
 
 ## v2.1.0 — Pro pricing is live
 
