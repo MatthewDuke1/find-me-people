@@ -235,6 +235,50 @@
     ["#adv-date", "#adv-pay"].forEach((sel) => contentEl.querySelector(sel).addEventListener("input", refreshDeadlines));
     contentEl.querySelector("#adv-pay").addEventListener("change", refreshDeadlines);
 
+    // Refund deadlines, dated by the ledger (Pro). The deadline countdown used
+    // to need the charge date typed in even when Sula had watched the purchase
+    // happen -- nothing read the ledger at all. Now, on a site where the
+    // ledger holds a confirmed purchase, Pro fills in the form and the
+    // deadlines appear immediately. Free users are told the purchase is there.
+    (async () => {
+      const L = window.SulaLedger;
+      if (!L || !host) return;
+      let entry = null;
+      try { entry = L.purchasesForHost(await L.loadAll(), host)[0] || null; } catch (_) { entry = null; }
+      if (!entry) return;
+      const pre = L.refundPrefill(entry);
+      if (!pre.date) return;
+
+      const note = document.createElement("div");
+      note.className = "adv-note";
+      contentEl.querySelector("#adv-deadlines").before(note);
+
+      let pro = false;
+      try { pro = typeof isPro === "function" ? !!(await isPro()) : false; } catch (_) { pro = false; }
+      if (!pro) {
+        note.innerHTML = `Sula remembered a purchase on this site. <strong>Pro</strong> fills in the date, amount and order number so your deadlines appear instantly. <a href="#" id="adv-ledger-up">Unlock</a>`;
+        note.querySelector("#adv-ledger-up").addEventListener("click", (ev) => {
+          ev.preventDefault();
+          if (typeof openUpgrade === "function") openUpgrade();
+        });
+        return;
+      }
+
+      // Never overwrite what the user typed; the company field defaults to the
+      // bare hostname, which a real merchant name should replace.
+      const setIfBlank = (sel, val, replaceable) => {
+        const el = contentEl.querySelector(sel);
+        if (!el || !val) return;
+        if (!el.value.trim() || (replaceable && el.value.trim() === replaceable)) el.value = val;
+      };
+      setIfBlank("#adv-company", pre.company, host.replace(/^www\./, ""));
+      setIfBlank("#adv-amount", pre.amount);
+      setIfBlank("#adv-order", pre.orderRef);
+      setIfBlank("#adv-date", pre.date);
+      note.textContent = `Filled from your purchase ledger: ${[pre.company, pre.amount, pre.date].filter(Boolean).join(" · ")}. Check it matches your statement.`;
+      refreshDeadlines();
+    })();
+
     contentEl.querySelector("#adv-readpolicy").addEventListener("click", async () => {
       const box = contentEl.querySelector("#adv-policy");
       box.hidden = false; box.textContent = "Reading the page…";

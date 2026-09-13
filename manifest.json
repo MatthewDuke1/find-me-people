@@ -84,9 +84,7 @@
   ],
   "background": {
     "service_worker": "background.js",
-    "scripts": [
-      "background.js"
-    ]
+    "scripts": ["ledger-store.js", "background.js"]
   },
   "icons": {
     "16": "icons/icon16.png",

@@ -807,6 +807,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Pro upgrade/activate footer (no-op visually until license.js PRO_ENFORCED).
   if (typeof renderProFooter === "function") renderProFooter();
 
+  // Renewal alert banner (Pro). The toolbar badge says something is renewing;
+  // this says what, above the tabs, with a one-click route to the ledger.
+  const viewTabsEl = document.querySelector(".view-tabs");
+  if (window.SulaLedgerUI && viewTabsEl) window.SulaLedgerUI.renderRenewalBanner(viewTabsEl);
+
   // First-run walkthrough for new users (shows once, ever).
   if (window.SulaOnboarding && typeof window.SulaOnboarding.maybeShow === "function") {
     window.SulaOnboarding.maybeShow();
