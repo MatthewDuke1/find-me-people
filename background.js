@@ -1,5 +1,5 @@
 
-// ── Renewal alerts ────────────────────────────────────────────────────────
+// ── Renewal alerts (Pro) ──────────────────────────────────────────────────
 // A warning BEFORE the charge lands is the whole value of the ledger. After
 // the charge it is just a receipt, and the user is already arguing about a
 // refund instead of avoiding one.
@@ -7,51 +7,92 @@
 // Deliberately does NOT request the notifications permission. A daily OS
 // notification from a browser extension is the fastest way to get uninstalled,
 // and a new permission on a privacy extension costs more trust than it buys.
-// The alert rides the badge the extension already owns; the panel carries the
+// The alert rides the badge the extension already owns; the popup carries the
 // detail when the user opens it.
 //
 // Reads only what is already on the device. No network call, ever.
+//
+// The date logic lives in ledger-store.js and is SHARED, not re-implemented
+// here. This file used to carry its own copy that only accepted a stored
+// numeric date -- which capture never wrote -- so no alert could ever fire.
+// Chrome runs this as a service worker, where importScripts loads the store;
+// Firefox runs it as an event page with ledger-store.js listed first in
+// manifest background.scripts, so the global already exists.
+if (typeof importScripts === "function" && typeof self !== "undefined" && !self.SulaLedger) {
+  try { importScripts("ledger-store.js"); } catch (_) { /* alerts stay off; nothing else breaks */ }
+}
+const Ledger =
+  (typeof self !== "undefined" && self.SulaLedger) ||
+  (typeof window !== "undefined" && window.SulaLedger) ||
+  null;
+
 const LEDGER_ALARM = "sula-renewal-check";
 const RENEWAL_HORIZON_DAYS = 5;
 const KEY_PREFIX = "sula_ledger_";
 const ENABLED_KEY = "sula_ledger_enabled";
+const DUE_KEY = "sula_renewals_due";
+const RENEWAL_BADGE_COLOR = "#fbbf24";
 
-chrome.runtime.onInstalled.addListener(() => {
-  // Once a day is right for this: renewal dates move in days, and a tighter
-  // period would wake the worker for nothing.
-  chrome.alarms.create(LEDGER_ALARM, { periodInMinutes: 60 * 24, delayInMinutes: 5 });
-});
+// Mirrors isProViaStorage() below and license.js's isPro(): grandfathered early
+// supporters, or a license marked pro. Read from the same snapshot as the
+// ledger so the badge never needs a second storage round-trip.
+function proFromSnapshot(all) {
+  return !!(all && (all.sula_early_supporter || (all.fmp_license && all.fmp_license.pro)));
+}
 
-function renewalsDueSoon(entries, nowMs, days) {
-  const horizon = nowMs + days * 24 * 60 * 60 * 1000;
-  return entries.filter((e) => {
-    if (!e || e.kind !== "subscription") return false;
-    if (e.state === "closed") return false;
-    if (e.mine === false) return false;          // marked "not mine" — a gift
-    const next = e.renewal && e.renewal.nextDate;
-    if (typeof next !== "number") return false;
-    return next >= nowMs && next <= horizon;
+function refreshRenewalBadge() {
+  if (!Ledger) return;
+  chrome.storage.local.get(null, (all) => {
+    if (chrome.runtime.lastError || !all) return;
+    const due = Ledger.dueCountFromSnapshot(all, {
+      now: Date.now(),
+      pro: proFromSnapshot(all),
+      days: RENEWAL_HORIZON_DAYS,
+    });
+    // Only write when it changed: this key is read by the per-tab badge
+    // handler, and a write on every refresh would be pointless churn.
+    if (all[DUE_KEY] !== due) chrome.storage.local.set({ [DUE_KEY]: due });
+    // Set AND clear. The old handler only ever set the badge, so a renewal
+    // that was cancelled, or a user who switched the ledger off, kept a
+    // stale number on the icon until the extension reloaded.
+    chrome.action.setBadgeText({ text: due > 0 ? String(due) : "" }).catch(() => {});
+    if (due > 0) chrome.action.setBadgeBackgroundColor({ color: RENEWAL_BADGE_COLOR }).catch(() => {});
   });
 }
 
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (!alarm || alarm.name !== LEDGER_ALARM) return;
-  chrome.storage.local.get(null, (all) => {
-    if (chrome.runtime.lastError) return;
-    if (!all || all[ENABLED_KEY] === false) return;   // user turned the ledger off
-    const entries = [];
-    for (const k of Object.keys(all)) {
-      if (k.indexOf(KEY_PREFIX) === 0 && k !== ENABLED_KEY && all[k]) entries.push(all[k]);
-    }
-    const due = renewalsDueSoon(entries, Date.now(), RENEWAL_HORIZON_DAYS);
-    // Store the count for the panel to read, and mark the badge so the user
-    // has a reason to open Sula without being interrupted by an OS popup.
-    chrome.storage.local.set({ sula_renewals_due: due.length });
-    if (due.length > 0) {
-      chrome.action.setBadgeText({ text: String(due.length) }).catch(() => {});
-      chrome.action.setBadgeBackgroundColor({ color: "#fbbf24" }).catch(() => {});
+// Chrome documents that alarms may be cleared when the browser restarts, so
+// creating it only on install could silently end renewal alerts after the
+// first reboot. Re-arm on every startup; get() first so the daily cadence
+// isn't reset each time.
+function ensureRenewalAlarm() {
+  chrome.alarms.get(LEDGER_ALARM, (existing) => {
+    if (!existing) {
+      // Once a day is right: renewal dates move in days, and a tighter period
+      // would wake the worker for nothing.
+      chrome.alarms.create(LEDGER_ALARM, { periodInMinutes: 60 * 24, delayInMinutes: 5 });
     }
   });
+}
+
+chrome.runtime.onInstalled.addListener(() => { ensureRenewalAlarm(); refreshRenewalBadge(); });
+chrome.runtime.onStartup.addListener(() => { ensureRenewalAlarm(); refreshRenewalBadge(); });
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm && alarm.name === LEDGER_ALARM) refreshRenewalBadge();
+});
+
+// Recompute as soon as something that decides the badge changes, instead of
+// waiting up to a day: the ledger switch, Pro status, or a new capture.
+// Debounced because one capture writes several keys. DUE_KEY is excluded, or
+// the refresh would trigger itself.
+let renewalRefreshTimer = null;
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+  const relevant = Object.keys(changes).some((k) =>
+    k === "fmp_license" || k === "sula_early_supporter" || k.indexOf(KEY_PREFIX) === 0);
+  if (!relevant) return;
+  clearTimeout(renewalRefreshTimer);
+  renewalRefreshTimer = setTimeout(refreshRenewalBadge, 2000);
 });
 
 // Sula - Background Service Worker
@@ -171,11 +212,25 @@ syncGpcRuleset();
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.action === "updateBadge" && sender.tab) {
     const count = msg.count || 0;
-    const text = count > 0 ? String(count) : "";
-    const color = count > 0 ? "#60a5fa" : "#52525b";
-
-    chrome.action.setBadgeText({ text, tabId: sender.tab.id });
-    chrome.action.setBadgeBackgroundColor({ color, tabId: sender.tab.id });
+    const tabId = sender.tab.id;
+    chrome.storage.local.get([DUE_KEY], (r) => {
+      const due = (r && r[DUE_KEY]) || 0;
+      if (due > 0 || count === 0) {
+        // Defer this tab to the global badge (text: null). Two reasons:
+        //  - a due renewal outranks a contact count while it is due; it is
+        //    rare, time-limited, and the thing the ledger exists for;
+        //  - a tab-specific "" OVERRIDES the global badge. This handler used to
+        //    set "" on every page with no contacts, which hid the renewal
+        //    count on nearly every tab the user opened.
+        chrome.action.setBadgeText({ text: null, tabId }).catch(() => {});
+        chrome.action.setBadgeBackgroundColor({
+          color: due > 0 ? RENEWAL_BADGE_COLOR : "#52525b", tabId,
+        }).catch(() => {});
+        return;
+      }
+      chrome.action.setBadgeText({ text: String(count), tabId }).catch(() => {});
+      chrome.action.setBadgeBackgroundColor({ color: "#60a5fa", tabId }).catch(() => {});
+    });
   }
 });
 

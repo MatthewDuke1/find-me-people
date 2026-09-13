@@ -157,9 +157,13 @@ suite("the user-facing controls exist", () => {
     assertTrue(ledgerUi.includes("L.wipe()"), "delete-all is not wired to wipe()");
   });
 
-  test("the view is not behind the Pro gate", () => {
-    // Capturing from a free user who cannot see or delete the result is the one
-    // arrangement that would be indefensible.
-    assertTrue(!/gateProFeature|gate\(/.test(ledgerUi), "ledger view is Pro-gated");
+  test("free users keep the count and the delete-all", () => {
+    // The ledger is Pro (decided 2026-09-13), but capture runs for everyone so
+    // an upgrade opens a ledger that is already full. What keeps that
+    // defensible: a free user always sees HOW MUCH is stored and can delete
+    // all of it without paying. The free view must never lose either.
+    const locked = ledgerUi.slice(ledgerUi.indexOf("function lockedHtml"), ledgerUi.indexOf("function fullHtml"));
+    assertTrue(locked.includes("vm.count"), "free view no longer shows how much is stored");
+    assertTrue(locked.includes("ledger-wipe"), "free view no longer offers delete-all");
   });
 });

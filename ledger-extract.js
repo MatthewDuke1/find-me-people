@@ -193,6 +193,13 @@
     return PAN_SHAPED.test(t.replace(/\s+/g, " ")) || CVV_LABEL.test(t);
   }
 
+  function withoutRenewalDates(text) {
+    const t = String(text || "");
+    const m = NEXT_DATE_LABEL.exec(t);
+    if (!m) return t;
+    return t.slice(0, m.index) + " " + t.slice(m.index + m[0].length + 48);
+  }
+
   // ── the extractor ─────────────────────────────────────────────────────
   function extractOrderFacts(input) {
     const { url = "", title = "", bodyText = "", topDomain = "", siteName = "" } = input || {};
@@ -204,7 +211,12 @@
     const merchant = extractMerchant({ topDomain, siteName, title });
     const amount = extractAmount(bodyText);
     const orderRef = extractOrderRef(bodyText);
-    const occurredAt = extractDate(bodyText);
+    // The purchase date must not be the NEXT billing date. A confirmation page
+    // reading "Next billing date: October 12" would otherwise record the
+    // purchase as happening in the future, and the refund form would prefill
+    // that. So the date sitting right after a renewal label is cut out before
+    // looking for the purchase date.
+    const occurredAt = extractDate(withoutRenewalDates(bodyText));
 
     const provenance = {};
     if (amount) provenance.amount = "label:" + amount.label.toLowerCase();
@@ -233,6 +245,101 @@
     };
   }
 
+  // ── renewal terms ─────────────────────────────────────────────────────
+  // Renewal alerts need a DATE. Until this existed, capture stored the matched
+  // renewal phrase with `nextDate: null`, every alert filter required a number,
+  // and so no alert could ever fire. This recovers the two things a page can
+  // actually tell us:
+  //
+  //   1. An explicit next date  -- "Next billing date: October 12, 2026".
+  //      The strongest signal; the merchant is telling us outright.
+  //   2. A cadence              -- "renews monthly", "$99 billed annually".
+  //      The store rolls this forward from the purchase date at read time.
+  //
+  // Same rule as the rest of this file: never guess. A page reading "$9.99/month
+  // or $99/year" with no renewal wording names two cadences and commits to
+  // neither, so it yields no cadence rather than a coin flip.
+  const NEXT_DATE_LABEL = /\b(next (billing|payment|charge|bill|renewal)( date)?|(auto-?)?renews? on|will (auto-?)?renew on|renewal date|next billed on|billed next on|(plan|subscription|membership) renews)\b/i;
+  const RENEWAL_CONTEXT = /\b(auto-?renew\w*|renews?|renewal|recurring|billed|billing|subscription|membership|charged)\b/gi;
+  const CADENCES = [
+    { cadence: "annual", re: /\b(annual(ly)?|yearly|per year|a year|each year|every (12|twelve) months)\b|\/\s?(yr|year)\b/i },
+    { cadence: "quarterly", re: /\b(quarterly|per quarter|every (3|three) months)\b/i },
+    { cadence: "monthly", re: /\b(monthly|per month|a month|each month|every month)\b|\/\s?mo(nth)?\b/i },
+    { cadence: "weekly", re: /\b(weekly|per week|a week|each week|every week)\b|\/\s?wk\b/i },
+  ];
+
+  function cadencesIn(text) {
+    const t = String(text || "");
+    return CADENCES.filter((c) => c.re.test(t)).map((c) => c.cadence);
+  }
+
+  // An explicit date may only be trusted if it is plausibly the NEXT charge:
+  // not already past, and not further out than a yearly plan could bill.
+  const MAX_AHEAD_MS = 400 * 24 * 60 * 60 * 1000;
+  const PAST_TOLERANCE_MS = 24 * 60 * 60 * 1000;
+
+  function extractRenewal(text, opts) {
+    const t = String(text || "");
+    const now = opts && typeof opts.now === "number" ? opts.now : Date.now();
+
+    // 1. Explicit next date, read only from just after its label.
+    let nextDate = null;
+    const label = NEXT_DATE_LABEL.exec(t);
+    if (label) {
+      const after = t.slice(label.index + label[0].length, label.index + label[0].length + 48);
+      const d = extractDate(after);
+      if (d !== null && d >= now - PAST_TOLERANCE_MS && d <= now + MAX_AHEAD_MS) nextDate = d;
+    }
+
+    // 2. Cadence, read only from windows around renewal wording. A lone
+    //    "/month" in a product grid is a price, not a billing term.
+    let cadence = null;
+    const found = new Set();
+    let m;
+    RENEWAL_CONTEXT.lastIndex = 0;
+    while ((m = RENEWAL_CONTEXT.exec(t)) !== null) {
+      const win = t.slice(Math.max(0, m.index - 60), m.index + m[0].length + 60);
+      cadencesIn(win).forEach((c) => found.add(c));
+      if (found.size > 1) break;
+    }
+    if (found.size === 1) cadence = [...found][0];
+
+    if (nextDate === null && cadence === null) return null;
+    return {
+      cadence,
+      nextDate,
+      phrase: label ? label[0] : (cadence ? "renews " + cadence : ""),
+    };
+  }
+
+  // ── capture composition ───────────────────────────────────────────────
+  // What content.js hands to SulaLedger.capture(), built here rather than
+  // inline so the end-to-end test exercises the SAME composition the extension
+  // runs. Every ledger bug found so far hid in the gap between a unit-tested
+  // piece and the untested code that wired it up; this closes that gap for
+  // capture.
+  function captureInput(page, opts) {
+    const o = opts || {};
+    const now = typeof o.now === "number" ? o.now : Date.now();
+    const facts = extractOrderFacts(page);
+    if (facts.refused) return { facts, opts: null };
+
+    const renewal = extractRenewal(page && page.bodyText, { now });
+    // A purchase with real renewal terms IS a subscription, whichever page it
+    // was seen on. A free-trial checkout reading "then $9.99/month" is the
+    // moment a subscription is born.
+    const isSub = o.moment === "subscription" || !!renewal;
+    return {
+      facts,
+      opts: {
+        moment: o.moment,
+        kind: isSub ? "subscription" : "purchase",
+        renewal,
+        now,
+      },
+    };
+  }
+
   const api = {
     parseAmount,
     detectCurrency,
@@ -242,6 +349,8 @@
     extractDate,
     looksLikePaymentData,
     extractOrderFacts,
+    extractRenewal,
+    captureInput,
   };
   if (typeof window !== "undefined") window.SulaLedgerExtract = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

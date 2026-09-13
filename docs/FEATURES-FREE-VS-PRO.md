@@ -1,6 +1,6 @@
 # Sula — free vs Pro
 
-Current as of **2.6.5**.
+Current as of **2.6.7**. Checked against the Pro gates in the code, not the other way round.
 
 The shape of the split: anything that helps you *find out where you stand* is
 free. Anything that *does the work for you* is Pro. A free user gets a real
@@ -28,20 +28,25 @@ answer on every feature, not a teaser.
 | **Email quality checks** | Syntax, disposable domains, and role-account detection, all local. |
 | **Network transparency** | Shows exactly what (if anything) left your browser during a scan. Three of the six request sites were removed in 2.6.6, so this now reads a truthful zero on far more pages. |
 | **Checkout Guard** | Reads the fine print a merchant buries on the checkout page — auto-renewal terms, restocking fees, final-sale flags — before you pay. |
-| **Privacy Guard / GPC** | Sends a Global Privacy Control signal, which several US states legally require sites to honour. |
+| **Privacy Guard / GPC** | Sends a Global Privacy Control signal, which several US states legally require sites to honour. The switch is free; the Privacy Guard *tab* (data-broker opt-out tracker) is Pro. |
+| **Refund & complaint letters** | Refund request, cancellation request, and executive escalation letters, built from the facts you enter. Free since 2.6.3. |
+| **Chargeback guidance** | Whether a chargeback is the right move *yet*, then the dispute steps. |
+| **Subscription Guardian (manual)** | Add a subscription by hand on the Advocacy tab and see how many days until it renews. No alerts; automatic renewal alerts come from the ledger (Pro). |
+| **Purchase ledger: capture, count, delete** | Sula records purchases for every user. A free user sees how many, can delete them all, and can switch capture off. The detail and what the ledger powers are Pro (below). |
 
 ## Pro — $6/month, $57.60/year, or $80 once
 
 | Feature | What it does |
 |---|---|
-| **Refund & complaint letters** | Seven scenarios (unauthorized charge, duplicate charge, defective, not as described, free-trial auto-renewal, cancelled-but-charged, price drop), each written with the right leverage — FCBA, the merchant's own policy, chargeback, FTC negative-option, CFPB. |
-| **Chargeback guidance** | Tells you whether a chargeback is the right move *yet* (often: write to the merchant first), then the exact dispute steps for Chase, Amex, Bank of America, Citi, Capital One, or Wells Fargo. |
-| **Subscription Guardian** | Tracks renewal dates, warns before a free trial converts, and drafts the cancellation. |
-| **Passive ledger** | On by default; one switch in the popup turns it off, and the Subs tab has a one-click delete-all. Remembers what you bought from the order and billing pages you were already visiting, so refund deadlines date themselves and subscriptions appear without importing a bank statement. Stored only on your device; nothing is uploaded. |
-| **Renewal alerts** | A warning before a charge lands, not after — driven by the ledger, with the cancellation contact already found. |
-| **Statement import** | CSV / OFX / QFX from your own bank, parsed in the browser. Now the power-user path rather than the price of entry. |
+| **Passive ledger** | The cornerstone. Every purchase Sula has remembered, listed in the Subs tab with upcoming renewals first. |
+| **Renewal alerts** | Toolbar count plus a popup banner naming what renews in the next 5 days. Dates come from the page's stated next billing date, or its cadence rolled forward by calendar month. |
+| **Refund-form prefill** | On a site where the ledger holds a confirmed purchase, the refund form arrives with date, amount and order number, so deadlines appear instantly. |
+| **Statement import** | CSV / OFX / QFX from your own bank, parsed in the browser, with 335 merchants recognised by name. The power-user path now that the ledger exists. |
+| **Bulk export** | Contacts as CSV or vCard. |
+| **Save to CRM** | Push a page's contacts to your own webhook. |
+| **Draft outreach** | A cold email pre-filled to the contact you found. |
+| **Privacy Guard tab** | Data-broker opt-out tracker: each broker's real opt-out page and a 6-month re-check reminder. Points you at each one; does not submit removals. |
 | **Regulatory escalation drafts** | Complaint letters aimed at the right agency. |
-| **Mailbox verification** | Real deliverability checks beyond the free syntax/MX tier. |
 
 ---
 
@@ -50,8 +55,8 @@ answer on every feature, not a teaser.
 **Anyone who installed Sula before pricing shipped keeps Pro for good — every
 Pro feature, including ones added later, with no license and nothing to click.**
 
-That covers the passive ledger and renewal alerts, and anything Pro that ships
-after them. Two ways to qualify, so nobody slips through:
+That covers the passive ledger, renewal alerts and refund-form prefill, and
+anything Pro that ships after them. Two ways to qualify, so nobody slips through:
 
 1. Running any build older than `PRICING_VERSION` (2.1.0), on install *or*
    update — the flag is written before pricing ever reaches them.

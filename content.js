@@ -3291,6 +3291,12 @@
     count: totalFound,
   }).catch(() => {});
 
+  // Passive ledger, initial pass. Short delay for the same reason Checkout
+  // Guard waits: order totals and confirmation numbers often render a beat
+  // after document_idle. Later rescans still fill in anything that arrives
+  // after this.
+  setTimeout(sulaCaptureToLedger, 1500);
+
   // Auto-rescan on DOM changes. SPA pages (Spirit, modern support sites)
   // hydrate after document_idle and lazy-load contact info; the initial scan
   // misses it. Debouncing on 1s of mutation idle keeps scanPage runs to at
@@ -5087,9 +5093,27 @@
   // bills, so the ledger is built from pages the user visits anyway rather
   // than from a bank statement they have to export.
   //
-  // Opt-in is checked inside SulaLedger.capture(), which returns null when the
-  // ledger is off -- so this function is a no-op for anyone who has not asked
-  // for it. Nothing here makes a network request.
+  // The on/off switch is checked inside SulaLedger.capture() as well as here.
+  // Capture runs for every user, free and Pro: Pro is what UNLOCKS the ledger
+  // (the full list, renewal alerts, refund-form prefill), so a new Pro user
+  // starts with the history they already built. Nothing here makes a network
+  // request.
+  //
+  // Called once after the initial scan AND on DOM-driven rescans. It used to be
+  // called only from the rescan path, which fires only when the page mutates
+  // after load -- so an ordinary static order-confirmation page never captured
+  // anything at all.
+  //
+  // Rescans can fire every few seconds on a busy SPA, and every capture reads
+  // and rewrites the ledger. So a rescan re-captures only when it learned
+  // something: a new URL or moment, higher confidence (the order total
+  // rendered late), or renewal terms the last pass didn't have.
+  // `var`, not `let`: the initial-scan call is scheduled from far above this
+  // line. A `let` would sit in its temporal dead zone if execution ever
+  // returned before reaching it, the guard would throw inside the try below,
+  // and capture would fail silently -- the exact failure being fixed here.
+  var sulaLedgerLast;
+
   async function sulaCaptureToLedger() {
     try {
       if (!window.SulaLedger || !window.SulaLedgerExtract) return;
@@ -5099,6 +5123,7 @@
       // the caller, because a miss is unrecoverable once written.
       if (chrome?.extension?.inIncognitoContext) return;
 
+      const bodyText = (document.body && document.body.innerText) || "";
       const moment = window.SulaRefundMoment
         ? window.SulaRefundMoment.detectMoment()
         : { moment: "none" };
@@ -5106,7 +5131,7 @@
         ? window.SulaCheckoutSignals.classifyCheckout({
             url: location.href,
             title: document.title || "",
-            bodyText: (document.body && document.body.innerText) || "",
+            bodyText,
           })
         : { checkout: false };
 
@@ -5116,26 +5141,26 @@
       else if (moment.moment === "subscription") which = "subscription";
       if (!which) return;
 
-      const bodyText = (document.body && document.body.innerText) || "";
       const siteNameEl = document.querySelector('meta[property="og:site_name"]');
-      const facts = window.SulaLedgerExtract.extractOrderFacts({
+      // The same composition the end-to-end test runs (see captureInput).
+      const { facts, opts } = window.SulaLedgerExtract.captureInput({
         url: location.href,
         title: document.title || "",
         bodyText,
         topDomain: location.hostname,
         siteName: siteNameEl ? siteNameEl.getAttribute("content") || "" : "",
-      });
+      }, { moment: which, now: Date.now() });
+      if (!opts) return; // refused: payment data on the page
 
-      // Renewal terms come from the checkout scanner, which returns the matched
-      // phrase and not just a boolean -- that phrase is how a subscription gets
-      // captured at birth with the merchant's own wording.
-      let renewal = null;
-      if (window.SulaCheckoutSignals && window.SulaCheckoutSignals.scanAutoRenew) {
-        const ar = window.SulaCheckoutSignals.scanAutoRenew(bodyText);
-        if (ar && ar.autoRenew) renewal = { cadence: null, nextDate: null, phrase: ar.phrase };
-      }
+      const key = location.href + "|" + which;
+      const hasRenewal = !!opts.renewal;
+      const last = sulaLedgerLast || { key: "", confidence: -1, renewal: false };
+      if (key === last.key &&
+          facts.confidence <= last.confidence &&
+          !(hasRenewal && !last.renewal)) return;
+      sulaLedgerLast = { key, confidence: facts.confidence, renewal: hasRenewal };
 
-      await window.SulaLedger.capture(facts, { moment: which, renewal });
+      await window.SulaLedger.capture(facts, opts);
     } catch (_) {
       // A ledger failure must never break a scan.
     }

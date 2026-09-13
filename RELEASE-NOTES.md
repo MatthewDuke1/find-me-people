@@ -9,57 +9,60 @@ once signed. Same unified package as Chrome — one zip, both stores.
 
 ---
 
-## v2.6.7 — Sula remembers what you buy
+## v2.6.7 — The purchase ledger (Pro)
 
-**The passive ledger.** Sula is already on the page when you buy something, so it
-now keeps a record as it happens instead of asking you to export a bank
-statement. When you land on an order confirmation or billing page it notes the
+**Sula keeps a ledger of what you buy.** Sula is already on the page when you buy
+something, so it keeps the record as it happens instead of asking you to export a
+bank statement. On an order confirmation, checkout or billing page it notes the
 merchant, the amount, the order number and the date, plus renewal terms when the
 page states them.
 
-- **Refund deadlines date themselves.** A purchase Sula saw already has its date,
-  so the deadline engine no longer needs you to type one in.
-- **Renewal alerts before the charge.** Once a day Sula checks for subscriptions
-  renewing in the next 5 days and puts the count on its toolbar icon. No OS
-  notification and no `notifications` permission; the detail is in the popup.
-- **Checkouts vs. purchases.** A checkout Sula sees is held as unconfirmed and is
-  promoted only when the confirmation page arrives. An abandoned cart is dropped
-  after 72 hours instead of becoming a fake purchase with a refund deadline.
-- **One purchase, one entry.** Checkout, confirmation and a revisit days later are
-  merged by order number, or by merchant and amount within 48 hours.
-- **On by default, and easy to turn off.** A *Remember my purchases* switch sits
-  beside the side-panel and Global Privacy Control switches.
-- **Everything it holds is visible.** The top of the Subs tab lists what the
-  ledger remembers, with a one-click delete-all. This view is not behind Pro:
-  anyone Sula records for can see and erase it.
-- **What it refuses to record.** If anything card-shaped appears on the page, the
-  capture is abandoned entirely rather than scrubbed. Nothing is captured in a
-  private window. Payment processors (Stripe, PayPal, Adyen) are never recorded
-  as the merchant.
-- **Where it goes: nowhere.** Stored in `chrome.storage.local` only. Never
-  uploaded, synced or used for analytics. Purchases age out after about 18
-  months; active subscriptions stay; at most 500 entries.
+The ledger is Sula's cornerstone Pro feature. It is recorded for every user, so
+someone who upgrades opens a ledger that is already full.
 
-**Statement import recognises merchants properly.** Grouping used to rely on
-hand-written patterns that failed on real bank descriptors:
+**What Pro unlocks**
 
-- `PAYPAL *SPOTIFY` became `PAYPAL`, so every PayPal-routed subscription merged
-  into one meaningless entry.
-- `SPOTIFY P34F9G8 NEW YORK NY` kept the transaction id, so one subscription split
-  into a separate merchant each month and was discarded. It never appeared.
-- `SQ *BLUE BOTTLE` came back unchanged.
+- **Every purchase, listed.** The Subs tab shows each purchase, with upcoming
+  renewals at the top.
+- **Renewal alerts before the charge.** Sula works out when each subscription
+  next charges — from a stated date ("Next billing date: October 12") or a
+  cadence ("renews monthly") rolled forward by calendar month — and shows a count
+  on its toolbar icon plus a banner naming them when something renews within 5
+  days. No system notifications, no `notifications` permission.
+- **Refund forms filled in.** On a site where the ledger holds a confirmed
+  purchase, the refund form arrives with the date, amount and order number, so the
+  deadline countdown appears immediately.
 
-Sula now ships a table of 12 payment-processor prefixes and 335 recurring billers,
-consulted before the old patterns. It matches whole words, so "The Honest
-Company" is not mistaken for Google Nest. The table is static data built before
-release: no model call, no network call, no API key at runtime.
+**What every user gets**
+
+- The count of what Sula has remembered, a one-click delete-all, and the off
+  switch. Nobody has to pay to see whether data exists or to remove it.
+
+**How the ledger behaves**
+
+- A checkout is held as unconfirmed and becomes a purchase only when the
+  confirmation arrives. Abandoned carts are dropped after 72 hours and never alert.
+- One purchase is one entry across checkout, confirmation and later visits, and a
+  subscription stays one entry however many months you visit its billing page.
+- The purchase date is never mistaken for the next billing date on the same page.
+- If anything card-shaped is on the page, the capture is abandoned. Nothing is
+  captured in a private window. Payment processors are never recorded as merchants.
+- Stored in `chrome.storage.local` only. Never uploaded, synced or used for
+  analytics. Purchases age out after about 18 months; active subscriptions stay.
+
+**Statement import recognises merchants properly** (Pro). A table of 12
+payment-processor prefixes and 335 recurring billers, matched as whole words,
+now runs before the old patterns — so `PAYPAL *SPOTIFY` is Spotify rather than
+PayPal, and a subscription whose descriptor changes monthly is no longer split up
+and discarded.
 
 **Also**
 
-- The privacy policy now has a full section on the purchase ledger.
-- The "Find Me People is now Sula" banner is retired. It never expired, so some
-  1.x upgraders were still seeing it a dozen releases later.
-- The What's new card can now feature a headline change and open the relevant tab.
+- Privacy policy rewritten for the ledger, and brought up to date: the removed
+  Zendesk help-center request is gone from the list of network requests, and the
+  `alarms` and `declarativeNetRequest` permissions are now explained.
+- The "Find Me People is now Sula" banner is retired.
+- The What's new card can feature a headline change and open the relevant tab.
 
 _Includes everything from 2.6.6._
 
