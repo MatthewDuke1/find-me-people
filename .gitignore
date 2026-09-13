@@ -7,3 +7,7 @@ distro/
 scripts/merchant-table.candidate.json
 scripts/merchant-table.candidate.json.raw.txt
 .probe/
+
+# Chrome writes compiled declarativeNetRequest rulesets here when the
+# extension is loaded unpacked. Local build artifact, never source.
+_metadata/
