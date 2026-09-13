@@ -260,7 +260,13 @@
   // or $99/year" with no renewal wording names two cadences and commits to
   // neither, so it yields no cadence rather than a coin flip.
   const NEXT_DATE_LABEL = /\b(next (billing|payment|charge|bill|renewal)( date)?|(auto-?)?renews? on|will (auto-?)?renew on|renewal date|next billed on|billed next on|(plan|subscription|membership) renews)\b/i;
-  const RENEWAL_CONTEXT = /\b(auto-?renew\w*|renews?|renewal|recurring|billed|billing|subscription|membership|charged)\b/gi;
+  // Billing-term words only. "subscription", "membership" and "charged" were
+  // tried and dropped: a ONE-TIME order page reading "You were charged $40.
+  // Save 10% with a monthly subscription!" would become a monthly subscription,
+  // and a Pro user would get a renewal alert for something they never signed
+  // up for. Upsells like that are common on confirmation pages. A missed
+  // cadence costs one alert; a false one costs trust in every alert.
+  const RENEWAL_CONTEXT = /\b(auto-?renew\w*|renews?|renewal|recurring|billed)\b/gi;
   const CADENCES = [
     { cadence: "annual", re: /\b(annual(ly)?|yearly|per year|a year|each year|every (12|twelve) months)\b|\/\s?(yr|year)\b/i },
     { cadence: "quarterly", re: /\b(quarterly|per quarter|every (3|three) months)\b/i },
@@ -298,7 +304,7 @@
     let m;
     RENEWAL_CONTEXT.lastIndex = 0;
     while ((m = RENEWAL_CONTEXT.exec(t)) !== null) {
-      const win = t.slice(Math.max(0, m.index - 60), m.index + m[0].length + 60);
+      const win = t.slice(Math.max(0, m.index - 40), m.index + m[0].length + 40);
       cadencesIn(win).forEach((c) => found.add(c));
       if (found.size > 1) break;
     }

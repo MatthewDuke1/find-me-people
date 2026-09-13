@@ -96,6 +96,12 @@ suite("reading renewal terms off a page", () => {
     assertEq(X.extractRenewal("Wool socks, $12/month savings bundle in stock", { now: T0 }), null);
   });
 
+  test("a one-time order with a subscription upsell is not a subscription", () => {
+    const upsell = "Order #ORD-40404. You were charged $40.00. Save 10% with a monthly subscription!";
+    assertEq(X.extractRenewal(upsell, { now: T0 }), null);
+    assertEq(X.captureInput(page(upsell), { moment: "order", now: T0 }).opts.kind, "purchase");
+  });
+
   test("a next date already in the past is not trusted", () => {
     const r = X.extractRenewal("Next billing date: " + longDate(T0 - 40 * DAY) + ". Renews monthly.", { now: T0 });
     assertEq(r.nextDate, null);
