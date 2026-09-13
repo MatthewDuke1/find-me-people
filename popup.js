@@ -498,27 +498,6 @@ function downloadFile(filename, mimeType, text) {
 
 // Lightweight toast reusing the existing #copied element (defaults back to the
 // "Copied to clipboard" label so copy actions are unaffected).
-// One-time rebrand notice for people who updated from a 1.x "Find Me People"
-// build. background.js sets the flag on a 1.x -> 2.x update only, so fresh
-// installs never see this. Dismissing clears the flag for good.
-function renderRebrandNotice() {
-  if (!chrome.storage || !chrome.storage.local) return;
-  chrome.storage.local.get(["sula_rebrand_notice"], (r) => {
-    if (!r.sula_rebrand_notice) return;
-    const host = document.getElementById("rebrand-notice");
-    if (!host) return;
-    host.innerHTML =
-      '<div class="rebrand-banner">' +
-      "<span><strong>Find Me People is now Sula.</strong> Same extension, same privacy promise, new name.</span>" +
-      '<button class="rebrand-dismiss" title="Dismiss" aria-label="Dismiss">&#10005;</button>' +
-      "</div>";
-    host.querySelector(".rebrand-dismiss").addEventListener("click", () => {
-      chrome.storage.local.remove("sula_rebrand_notice");
-      host.remove();
-    });
-  });
-}
-
 // Network transparency row. Sula's claim is that nothing leaves your browser;
 // this shows the receipts. An empty ledger renders "0 network requests"; a
 // non-empty one names each request, because a dishonest 0 would be worse than
@@ -828,11 +807,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Pro upgrade/activate footer (no-op visually until license.js PRO_ENFORCED).
   if (typeof renderProFooter === "function") renderProFooter();
 
-  // Rebrand notice (only renders when the update-from-1.x flag is set).
-  renderRebrandNotice();
-
-  // First-run walkthrough for new users (shows once, ever). Only 1.x upgraders
-  // see the rebrand notice, and they aren't new, so the two never collide.
+  // First-run walkthrough for new users (shows once, ever).
   if (window.SulaOnboarding && typeof window.SulaOnboarding.maybeShow === "function") {
     window.SulaOnboarding.maybeShow();
   }
