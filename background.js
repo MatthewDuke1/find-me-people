@@ -102,13 +102,11 @@ chrome.runtime.onInstalled.addListener((details) => {
     });
   }
 
-  // Rebrand notice: only people who knew it as "Find Me People" (1.x).
-  if (
-    details.reason === "update" &&
-    details.previousVersion &&
-    details.previousVersion.startsWith("1.")
-  ) {
-    chrome.storage.local.set({ sula_rebrand_notice: true });
+  // The "Find Me People is now Sula" banner was retired in 2.6.6. It had no
+  // expiry -- it stayed until dismissed -- so 1.x upgraders who never clicked
+  // the X were still seeing it a dozen releases later. Clear the stale flag.
+  if (details.reason === "update") {
+    chrome.storage.local.remove("sula_rebrand_notice");
   }
 
   // What's-new: on a real version update, record the version the user just
