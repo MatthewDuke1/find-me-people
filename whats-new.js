@@ -11,8 +11,20 @@
 //      card and write `sula_whatsnew_seen = <version>`, so it appears at most
 //      once per release.
 //
-// Adding a release: prepend an entry to NOTES. Keep it to a few plain lines —
-// this is a courtesy, not a spec sheet.
+// Adding a release: prepend an entry to NOTES.
+//
+// Notes show ONLY for the version a user updates TO. Someone jumping from
+// 2.6.5 to 2.6.7 never sees a 2.6.6 entry, so each release's notes must cover
+// everything since the last version most users actually had -- not just the
+// delta from the previous build number.
+//
+// An entry may carry:
+//   feature  { title, body }  one prominent callout, rendered above the list.
+//                             Use it for the release's headline feature.
+//   items    string[]         the rest, plainly.
+//   cta      { label, view }  a primary button that dismisses the card and
+//                             opens that popup tab, so the headline feature is
+//                             one click away instead of merely described.
 
 (() => {
   "use strict";
@@ -20,19 +32,27 @@
   const PENDING_KEY = "sula_whatsnew_pending";
   const SEEN_KEY = "sula_whatsnew_seen";
 
-  // version -> { headline, items[] }. Newest first. Keep copy plain and short.
+  // version -> { headline, feature?, items[], cta? }. Newest first. See the
+  // header for what each field does and what a release entry must cover.
   const NOTES = {
-    "2.6.6": {
-      headline: "Sula now remembers what you buy",
+    "2.6.7": {
+      headline: "Your purchases, remembered",
+      feature: {
+        title: "Sula now keeps a ledger of what you buy",
+        body: "When you land on an order confirmation or billing page, Sula notes the merchant, the amount and the order number. Refund deadlines date themselves, and Sula warns you before a subscription renews — not after it has already charged you.",
+      },
       items: [
-        "Sula notes purchases from the order pages you already visit, so refund deadlines date themselves and you get warned before a subscription renews.",
-        "It is on by default and stays on your device. Turn it off with \"Remember my purchases\" at the bottom of this popup; the Subs tab shows everything it holds and deletes it in one click.",
-        "Card numbers are never recorded — if Sula sees anything card-shaped on a page it skips the capture entirely.",
-        "Subscriptions billed through PayPal, Square or Toast are now recognised by the real merchant instead of the payment processor.",
-        "A subscription whose description changes slightly each month is no longer split up and missed.",
-        "Sula knows 335 common recurring billers by name, so your imported statement reads like a list of brands rather than bank codes.",
-        "The merchant list ships with the extension — no account, no network call, and your statement still never leaves your browser.",
+        "Renewal alerts: a number appears on the Sula icon when something is due to renew in the next 5 days.",
+        "Everything it remembers is listed at the top of the Subs tab, with a one-click delete-all.",
+        "On by default and stored only on this device — never uploaded. Turn it off any time with “Remember my purchases” at the bottom of this popup.",
+        "Card numbers are never recorded. If a page shows anything card-shaped, Sula skips it entirely.",
+        "Nothing is captured in a private window.",
+        "Bank statement imports now recognise 335 subscription brands by name.",
+        "Charges billed through PayPal, Square or Toast show the real merchant — “Spotify”, not “PAYPAL”.",
+        "A subscription whose bank description changes each month is no longer split up and missed.",
+        "The old “Find Me People is now Sula” banner is gone.",
       ],
+      cta: { label: "See what Sula remembered", view: "subs" },
     },
     "2.6.5": {
       headline: "Accuracy fixes from a 20-tester QA round",
@@ -79,6 +99,7 @@
         background: #111113; border: 1px solid #262629; border-radius: 12px;
         box-shadow: 0 14px 40px rgba(0,0,0,0.5);
         animation: sula-wn-in 0.22s ease-out;
+        max-height: calc(100vh - 24px); overflow-y: auto;
       }
       @media (prefers-reduced-motion: reduce) { #sula-wn { animation: none; } }
       @keyframes sula-wn-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
@@ -101,6 +122,16 @@
         font-size: 14px; font-weight: 700; color: #fafafa;
         padding: 0 14px 6px;
       }
+      #sula-wn .wn-feature {
+        margin: 2px 14px 10px; padding: 12px 14px;
+        background: rgba(74,222,128,0.07);
+        border: 1px solid rgba(74,222,128,0.28); border-radius: 10px;
+      }
+      #sula-wn .wn-feature-title {
+        font-size: 15px; font-weight: 700; color: #fafafa; line-height: 1.3;
+        margin-bottom: 6px;
+      }
+      #sula-wn .wn-feature-body { font-size: 13px; color: #d4d4d8; line-height: 1.5; }
       #sula-wn ul { list-style: none; margin: 0; padding: 0 14px 6px; }
       #sula-wn li {
         font-size: 12px; color: #a1a1aa; line-height: 1.45;
@@ -117,6 +148,16 @@
         padding: 8px; border-radius: 8px; cursor: pointer;
       }
       #sula-wn .wn-ok:hover { background: #93c5fd; }
+      #sula-wn .wn-cta {
+        width: 100%; background: #4ade80; color: #052e16; border: 0;
+        font-family: inherit; font-size: 13px; font-weight: 700;
+        padding: 10px; border-radius: 8px; cursor: pointer; margin-bottom: 6px;
+      }
+      #sula-wn .wn-cta:hover { background: #86efac; }
+      #sula-wn .wn-cta + .wn-ok {
+        background: transparent; color: #a1a1aa; border: 1px solid #262629;
+      }
+      #sula-wn .wn-cta + .wn-ok:hover { color: #fafafa; background: transparent; }
     `;
     const el = document.createElement("style");
     el.id = "sula-wn-styles";
@@ -148,11 +189,30 @@
         '<button class="wn-x" aria-label="Dismiss">×</button>' +
       '</div>' +
       '<div class="wn-head">' + esc(note.headline) + '</div>' +
+      (note.feature
+        ? '<div class="wn-feature">' +
+            '<div class="wn-feature-title">' + esc(note.feature.title) + '</div>' +
+            '<div class="wn-feature-body">' + esc(note.feature.body) + '</div>' +
+          '</div>'
+        : '') +
       '<ul>' + note.items.map((i) => '<li>' + esc(i) + '</li>').join('') + '</ul>' +
-      '<div class="wn-foot"><button class="wn-ok">Got it</button></div>';
+      '<div class="wn-foot">' +
+        (note.cta ? '<button class="wn-cta">' + esc(note.cta.label) + '</button>' : '') +
+        '<button class="wn-ok">Got it</button>' +
+      '</div>';
     document.body.appendChild(card);
     card.querySelector(".wn-x").addEventListener("click", () => dismiss(version));
     card.querySelector(".wn-ok").addEventListener("click", () => dismiss(version));
+    const cta = card.querySelector(".wn-cta");
+    if (cta && note.cta) {
+      cta.addEventListener("click", () => {
+        dismiss(version);
+        // Open the tab by clicking its real button, so the popup's own
+        // switching logic runs and there is one code path, not two.
+        const tabBtn = document.querySelector('.view-tab[data-view="' + note.cta.view + '"]');
+        if (tabBtn) tabBtn.click();
+      });
+    }
   }
 
   async function maybeShow() {
