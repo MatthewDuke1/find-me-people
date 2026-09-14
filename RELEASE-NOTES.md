@@ -9,6 +9,33 @@ once signed. Same unified package as Chrome — one zip, both stores.
 
 ---
 
+## v2.6.8 — The introduction shows once
+
+**Fixed: Sula kept re-doing its introduction.** All three introductions recorded
+"seen" only when you dismissed them a particular way, so any other way of leaving
+brought them back:
+
+- **The example-contacts panel** was marked seen only by "Got it". Collapsing it,
+  hiding it for a site, or navigating away re-opened it, expanded, on every page
+  of every site.
+- **The welcome tour** in the popup was marked done only by Skip, the last step or
+  Esc. Clicking outside the popup, the usual way it closes, restarted the tour on
+  every open.
+- **The What's new card** was marked seen only by its buttons.
+
+Each is now marked seen the moment it appears, so it shows once. The example panel
+stays on the page where it first appeared until you dismiss it, and is never
+spent on a background tab.
+
+**Also fixed:** on a first visit to a page with real contacts, the panel labelled
+them "examples, not real contacts". The examples banner now appears only when
+example contacts are actually shown.
+
+Verified in Chrome against the previous release, where all three reproduced, and
+against this build, where none do.
+
+_Includes everything from 2.6.7._
+
 ## v2.6.7 — The purchase ledger (Pro)
 
 **Sula keeps a ledger of what you buy.** Sula is already on the page when you buy

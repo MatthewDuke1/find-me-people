@@ -4780,6 +4780,7 @@
       el.addEventListener("click", () => {
         spMarkFirstRunSeen();
         spIsDemo = false;
+        spDemoThisPage = false;   // or the next rescan brings the examples back
         // The demo only renders when the real page had nothing on it, so the
         // honest post-dismiss state is the normal empty-page one: no panel.
         // The next page with real contacts mounts it again on its own.
@@ -5211,6 +5212,12 @@
   }
 
   let spIsDemo = false;
+  // Set once the example panel has been shown on THIS page. The first run is
+  // marked seen the moment the examples appear (so they never come back on
+  // another page), but the page itself keeps them until "Got it" -- otherwise
+  // the next rescan, which fires whenever the page mutates, would treat this
+  // page as a normal visit and yank the examples away mid-read.
+  let spDemoThisPage = false;
 
   async function ensureSidePanel(currentResults) {
     if (!document.body) return;
@@ -5235,17 +5242,31 @@
       return;
     }
 
+    // The introduction appears exactly once per install. It used to record
+    // "seen" only when the user clicked "Got it", so collapsing it, hiding it
+    // for a site, or simply navigating away re-opened it -- expanded, with
+    // example contacts -- on every page of every site.
+    if (spDemoThisPage) {
+      firstRun = true;
+    } else if (firstRun && document.visibilityState !== "visible") {
+      // Never spend the one showing on a background tab nobody is looking at
+      // (every open tab runs this at install or update time).
+      firstRun = false;
+    }
+
     // Visibility: the panel normally rides on found contacts. But Autofill is
     // most useful on application/contact forms, which often have no contacts of
     // their own. So if the user has set an autofill profile and the page has a
     // real fillable form (>= 2 profile-mapped fields), surface the panel for it.
     const profileSet = profile && Object.keys(profile).length > 0;
     let formOnly = false;
+    let usedDemo = false;
     // First run wins over the empty-page bail: a new user must meet the panel
     // even on a page with nothing on it, or they never learn it exists.
     if (firstRun && total === 0) {
       currentResults = spDemoResults();
       total = currentResults.emails.length + currentResults.phones.length;
+      usedDemo = true;
     } else if (total === 0) {
       if (profileSet && spCountFillableFields() >= 2) {
         formOnly = true;
@@ -5255,7 +5276,15 @@
         return;
       }
     }
-    spIsDemo = firstRun && total > 0 && !formOnly;
+    // The examples banner only when examples were actually substituted. This
+    // was `firstRun && total > 0`, which also labelled a first-run page's REAL
+    // contacts as "examples, not real contacts".
+    spIsDemo = usedDemo;
+    const firstRunShown = firstRun && !formOnly;
+    if (firstRunShown && !spDemoThisPage) {
+      spDemoThisPage = true;
+      spMarkFirstRunSeen();
+    }
     // On a form-only page the "On this page" view is empty, so open on Autofill.
     if (formOnly && spActiveView === "now") spActiveView = "autofill";
 
@@ -5298,7 +5327,7 @@
       document.documentElement.appendChild(host);
       // First run mounts opened. A collapsed tab on a page the user did not
       // ask anything of is indistinguishable from nothing happening.
-      if (spIsDemo) host.classList.add("expanded");
+      if (firstRunShown) host.classList.add("expanded");
       // Apply user-dragged position (if any) on first mount only -- after
       // this, host.style.top survives the inner re-renders so further
       // mutations don't snap the tab back to the CSS default.
