@@ -119,6 +119,10 @@
       </div>`;
 
     document.body.appendChild(overlay);
+    // Mark done the moment it opens. It used to be marked only by Skip, the
+    // last step, or Esc -- but a popup usually closes by clicking away, which
+    // reaches none of those, so the tour restarted on every open.
+    markDone();
 
     const emojiEl = overlay.querySelector("#onb-emoji");
     const titleEl = overlay.querySelector("#onb-title");

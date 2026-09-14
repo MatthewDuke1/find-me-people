@@ -35,6 +35,25 @@
   // version -> { headline, feature?, items[], cta? }. Newest first. See the
   // header for what each field does and what a release entry must cover.
   const NOTES = {
+    "2.6.8": {
+      headline: "Your purchases, remembered",
+      feature: {
+        title: "Sula now keeps a ledger of what you buy",
+        body: "When you land on an order confirmation or billing page, Sula notes the merchant, the amount and the order number. With Pro, it warns you before a subscription renews and fills in your refund form from what it saw.",
+      },
+      items: [
+        "Fixed: Sula\u2019s introduction no longer reopens on every page, and the welcome tour no longer restarts each time you open Sula.",
+        "Renewal alerts (Pro): a number on the Sula icon, and a banner here naming what renews, when a subscription is due in the next 5 days.",
+        "Refund form filled in (Pro): on a site where you bought something, the date, amount and order number are already there, so your deadlines appear straight away.",
+        "Sula remembers purchases for everyone. Free shows how many it has remembered; Pro shows every one.",
+        "Stored only on this device and never uploaded. Turn it off with \u201cRemember my purchases\u201d at the bottom of this popup, and delete everything from the Subs tab \u2014 free or Pro.",
+        "Card numbers are never recorded, and nothing is captured in a private window.",
+        "Bank statement imports (Pro) now recognise 335 subscription brands \u2014 \u201cSpotify\u201d, not \u201cPAYPAL\u201d.",
+        "A subscription whose bank description changes each month is no longer split up and missed.",
+        "The old \u201cFind Me People is now Sula\u201d banner is gone.",
+      ],
+      cta: { label: "See your purchase ledger", view: "subs" },
+    },
     "2.6.7": {
       headline: "Your purchases, remembered",
       feature: {
@@ -200,6 +219,11 @@
         '<button class="wn-ok">Got it</button>' +
       '</div>';
     document.body.appendChild(card);
+    // Seen once it has been shown. It used to be recorded only by the card's
+    // buttons, so closing the popup without clicking one showed it again on
+    // every open. The buttons still just remove the card.
+    lcSet({ [SEEN_KEY]: version });
+    try { chrome.storage.local.remove(PENDING_KEY); } catch (_e) {}
     card.querySelector(".wn-x").addEventListener("click", () => dismiss(version));
     card.querySelector(".wn-ok").addEventListener("click", () => dismiss(version));
     const cta = card.querySelector(".wn-cta");
